@@ -1,0 +1,22 @@
+# Version config for scripts/version_manager.py (shared script —
+# edit the config, never the script).
+
+[project]
+name = "Neuronection Auth Kit"
+
+# Single source of truth. The pattern must contain a named group 'version'.
+[version]
+file = "src/nx_auth/__init__.py"
+pattern = '__version__\s*=\s*"(?P<version>[^"]+)"'
+
+# Optional: other files that must carry the version.
+# type: "json" (field), "npm-lock" (root + packages."" versions), "regex"
+# (pattern with named group 'version'; optional dash_escape for shields.io).
+
+# Files staged together with the version files at release time
+# (release-scope docs, e.g. CHANGELOG.md).
+
+[release]
+docs = ["CHANGELOG.md"]
+tag_prefix = "v"
+# commit_message = "chore(release): bump version to {version}"
