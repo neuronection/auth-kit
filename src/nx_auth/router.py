@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from nx_auth.cookies import clear_session_cookies, cookie_names, new_csrf_token, set_session_cookies
-from nx_auth.deps import get_current_user
+from nx_auth.deps import auth_rate_guard, client_ip_from_request, get_current_user
 from nx_auth.instance import can_accept_demo, can_accept_registration
 from nx_auth.lockout import LockoutState, is_locked, register_failure
 from nx_auth.passwords import (
@@ -19,7 +19,6 @@ from nx_auth.passwords import (
 )
 from nx_auth.principal import Principal
 from nx_auth.protocols import AtomicRotateStore, EmailAlreadyExists, UserRecord
-from nx_auth.ratelimit import client_ip
 from nx_auth.session_flow import device_hint, issue_session
 from nx_auth.tokens import (
     AuthMode,
@@ -58,19 +57,11 @@ def _kit(request: Request) -> AuthKit:
 
 
 def _client_ip(request: Request, kit: AuthKit) -> str:
-    forwarded = request.headers.get("x-forwarded-for")
-    host = request.client.host if request.client else None
-    return client_ip(host, forwarded, kit.config.trusted_proxy_count)
+    return client_ip_from_request(request, kit)
 
 
 def _limit(request: Request, kit: AuthKit, *, with_email: str | None = None) -> None:
-    allowed, retry = kit.ip_limiter.allow(f"ip:{_client_ip(request, kit)}")
-    if allowed and with_email is not None:
-        allowed, retry = kit.email_limiter.allow(f"email:{with_email.lower()}")
-    if not allowed:
-        raise HTTPException(
-            status_code=429, detail="Too many requests", headers={"Retry-After": str(retry)}
-        )
+    auth_rate_guard(request, kit, with_email=with_email)
 
 
 def _respond(

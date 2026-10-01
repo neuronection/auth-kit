@@ -23,13 +23,14 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from nx_auth.cookies import clear_session_cookies, set_session_cookies
-from nx_auth.deps import get_current_user, require_admin
+from nx_auth.deps import auth_rate_guard, get_current_user, require_admin
 from nx_auth.instance import (
     InstanceMode,
     TransitionResult,
     effective_auth_mode,
     request_transition,
 )
+from nx_auth.lockout import LockoutState, is_locked, register_failure
 from nx_auth.passwords import (
     PasswordPolicyError,
     check_policy,
@@ -104,9 +105,28 @@ def _admin_user(user: UserRecord, activity_count: int) -> dict[str, object]:
     }
 
 
-def _verify_password(user: UserRecord, password: str) -> None:
+def _verify_password(kit: AuthKit, user: UserRecord, password: str) -> None:
+    """Password re-verification with the §7 lockout on the same counter
+    as login (S17): a hijacked session gets no unlimited guesses at these
+    confirmation flows. Wrong answers are the same generic 403 (§10) until
+    the threshold locks the account (423)."""
+    state = LockoutState(
+        failed_login_attempts=user.failed_login_attempts,
+        locked_until=user.locked_until,
+        threshold=kit.config.lockout_threshold,
+        lockout_minutes=kit.config.lockout_minutes,
+    )
+    if is_locked(state):
+        raise HTTPException(status_code=423, detail="Account locked; try again later")
     if not verify_password_or_dummy(password, user.password_hash):
+        failed = register_failure(state)
+        kit.users.set_login_failures(
+            user.id, failed.failed_login_attempts, failed.locked_until
+        )
+        if is_locked(failed):
+            raise HTTPException(status_code=423, detail="Account locked; try again later")
         raise HTTPException(status_code=403, detail=GENERIC_PASSWORD_ERROR)
+    kit.users.reset_login_failures(user.id)
 
 
 def _new_password(kit: AuthKit, password: str) -> str:
@@ -158,7 +178,8 @@ def change_password(
     user = kit.users.get(principal.user_id)
     if user is None:
         raise HTTPException(status_code=401, detail="Not authenticated")
-    _verify_password(user, body.current_password)
+    auth_rate_guard(request, kit, with_email=user.email)
+    _verify_password(kit, user, body.current_password)
     new_hash = _new_password(kit, body.new_password)
     kit.users.set_password(user.id, new_hash)
     # Global sign-out of every other session (§8 `ver`), then issue a
@@ -195,7 +216,8 @@ def delete_me(
     user = kit.users.get(principal.user_id)
     if user is None:
         raise HTTPException(status_code=401, detail="Not authenticated")
-    _verify_password(user, body.password)
+    auth_rate_guard(request, kit, with_email=user.email)
+    _verify_password(kit, user, body.password)
     kit.users.delete(user.id)
     kit.record(actor=principal.user_id, action="auth.account_delete", resource=principal.user_id)
     response = Response(status_code=204)
@@ -311,6 +333,7 @@ def update_instance(
     caller = kit.users.get(principal.user_id)
     if caller is None:
         raise HTTPException(status_code=401, detail="Not authenticated")
+    auth_rate_guard(request, kit, with_email=caller.email)
     # `password` is verified first (§12 "admin + password"): every
     # wrong-credential answer is the same generic 403, whatever the mode
     # request.
@@ -323,7 +346,7 @@ def update_instance(
     if setting_owner_credentials:
         new_owner_hash = _new_password(kit, body.password)
     else:
-        _verify_password(caller, body.password)
+        _verify_password(kit, caller, body.password)
     if target is InstanceMode.OPEN and kit.config.identity_mode == "server":
         raise HTTPException(status_code=403, detail="server instances never run open access")
     owner = kit.users.get_by_email(kit.owner_email) or caller

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "neuronection-auth-kit"
-version = "0.3.0"
+version = "0.3.1"
 description = "Family identity & authentication library: tokens, passwords, sessions, cookies/CSRF, instance access modes"
 readme = "README.md"
 license = "Apache-2.0"

@@ -106,3 +106,30 @@ def require_admin(principal: Principal = Depends(get_current_user)) -> Principal
     if not principal.is_admin:
         raise HTTPException(status_code=403, detail="Admin access required")
     return principal
+
+
+def client_ip_from_request(request: Request, kit: AuthKit) -> str:
+    """Client identity for limits/audit: rightmost-N trusted proxy hops (§7)."""
+    from nx_auth.ratelimit import client_ip
+
+    forwarded = request.headers.get("x-forwarded-for")
+    host = request.client.host if request.client else None
+    return client_ip(host, forwarded, kit.config.trusted_proxy_count)
+
+
+def auth_rate_guard(
+    request: Request, kit: AuthKit, *, with_email: str | None = None
+) -> None:
+    """Per-IP + per-email auth-flow rate limits (§7/§16) — 429 + Retry-After.
+
+    Covers every endpoint where a caller can guess secrets: the `/auth`
+    flows **and** the password-confirming account/instance actions (S17) —
+    a hijacked session must not get unlimited guesses anywhere.
+    """
+    allowed, retry = kit.ip_limiter.allow(f"ip:{client_ip_from_request(request, kit)}")
+    if allowed and with_email is not None:
+        allowed, retry = kit.email_limiter.allow(f"email:{with_email.lower()}")
+    if not allowed:
+        raise HTTPException(
+            status_code=429, detail="Too many requests", headers={"Retry-After": str(retry)}
+        )

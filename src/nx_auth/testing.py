@@ -52,6 +52,8 @@ CONTRACT_CASES: tuple[str, ...] = (
     "unpinned keys fatal on server, generated 0600 auth_keys.json on desktop",
     "14 knob map: every §16 tunable reachable from .env and OS env (OS env "
     "wins); unprefixed names inert; .env walk-up disabled in production",
+    "15 password-confirming actions (admin/instance, me password change, "
+    "account delete) share login's lockout counter and the auth rate limit",
 )
 
 

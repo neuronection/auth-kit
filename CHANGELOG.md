@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] — 2026-10-01
+
+### Security
+- **Password-confirming actions share login's defenses (S17, contract
+  §7):** `PATCH /api/v1/admin/instance`, `PATCH /api/v1/me/password` and
+  `DELETE /api/v1/me` re-verify the caller's password **against the same
+  lockout counter as login** — every wrong answer counts (423 once the
+  threshold trips; success resets) and every call rides the auth rate
+  limit (per-IP + per-account, 429 + `Retry-After`). Previously a
+  hijacked session could grind the password at the default rate limit
+  with no lockout. Contract case 15 + §18 row.
+
 ## [0.3.0] — 2026-10-01
 
 ### Added
