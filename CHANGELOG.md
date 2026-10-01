@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Family tool-config parity (plan 20 Phase 7):** ruff config matches
+  the product family byte-for-byte (py312, full rule set), the pytest
+  config carries the `contract` marker, contract-case test files are
+  marked (41 selected) and CI runs `pytest -m contract`. Requires
+  Python ≥3.12 (family floor).
+
+
 ## [0.3.1] — 2026-10-01
 
 ### Security
