@@ -113,3 +113,13 @@ class KeyRing:
         ring = cls.generate()
         ring.save_to_file(path)
         return ring
+
+    @classmethod
+    def load_for(cls, product: str, config_dir: Path) -> KeyRing:
+        """Family-standard resolution (ADR-0028 §5): env pins > 0600 file > generate.
+
+        `product` is the env prefix (`SA`, `CAREER`, …) for `<P>_*_KEY`
+        pinning; the ring persists as `auth_keys.json` in `config_dir`.
+        Products call exactly this — no local resolution copies.
+        """
+        return cls.load_or_generate(config_dir / "auth_keys.json", product)

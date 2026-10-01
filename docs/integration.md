@@ -117,23 +117,31 @@ back to the safe defaults):
 | `<P>_AUTH_REFRESH_ABSOLUTE_DAYS` | `refresh_absolute_days` |
 | `<P>_AUTH_LOCKOUT_THRESHOLD` | `lockout_threshold` |
 | `<P>_AUTH_LOCKOUT_MINUTES` | `lockout_minutes` |
+| `<P>_AUTH_PASSWORD_MIN_LENGTH` | `password_min_length` |
 | `<P>_REGISTRATION_ENABLED` | `registration_enabled` |
 | `<P>_COOKIE_SECURE` | `cookie_secure` |
 | `<P>_TRUSTED_PROXY_COUNT` | `trusted_proxy_count` |
+| `<P>_RATELIMIT_AUTH` | `auth_rate_per_minute` |
+| `<P>_RATELIMIT_AUTH_EMAIL` | `auth_email_rate_per_minute` |
 
-(`iss` is a code constant, not env.) **Known gap:** the
-`<P>_RATELIMIT_*` / password-min knobs have no env yet — code defaults
-only; pass them via `AuthConfig(...)`/`from_env(..., **overrides)` until
-the knobs land.
+(`iss` is a code constant, not env.) The names above are exactly
+`AUTH_KNOB_ENV_NAMES`; `knob_overrides(prefix, getter)` builds the same
+kwargs from a Settings-backed getter, so products route values from
+their pydantic `Settings` (which merged the `.env` file and the OS
+environment, OS env winning per key) instead of reading `os.environ` in
+product code — `.env`-file values then reach the kit config exactly like
+process-environment ones (contract case §18.14).
 
 ## Key ring
 
 `KeyRing` holds the per-kind HMAC keys (see
-[tokens-and-cookies.md](tokens-and-cookies.md)). `KeyRing.load_or_generate(path, prefix)`
-persists a JSON file and reads `<PREFIX>_SESSION_KEY` / `<PREFIX>_REFRESH_KEY` /
-`<PREFIX>_DATA_KEY` environment overrides first. **In containers, pin
-the three keys via env** — a recreated container without a mounted
-config dir would otherwise rotate keys and invalidate every session.
+[tokens-and-cookies.md](tokens-and-cookies.md)). Family standard
+resolution (ADR-0028): `KeyRing.load_for(product, config_dir)` — env
+pins (`<PREFIX>_SESSION_KEY` / `<PREFIX>_REFRESH_KEY` /
+`<PREFIX>_DATA_KEY`, all three or none) > 0600 `auth_keys.json` in the
+config dir > generated on first run. **In containers, pin the three keys
+via env** — a recreated container without a mounted config dir would
+otherwise rotate keys and invalidate every session.
 
 ## Stores (consumer-owned schema)
 
@@ -160,13 +168,28 @@ migrations. Kit ORM classes must not be added to a product's
 
 ## First boot
 
-`instance_settings` is written **only when the table is empty** — from
-the env value when legal (`open` is refused on a server entrypoint and
-silently becomes `authenticated`), else the §4 default (`open` on
-desktop, `authenticated` on server). Afterwards the row is authoritative
-and changes go through `nx_auth.instance.request_transition` (admin
-action, guard-railed). Call it through your own `PATCH /api/v1/admin/instance`
-endpoint — the kit does not expose mode changes on the auth router.
+`instance_settings` is written **only when the table is empty** — via
+`nx_auth.instance.initialize_instance(store, *, identity_mode,
+auth_mode_env, demo_mode_env, product=…)`, the single family
+implementation of the §4 init rules (ADR-0028): the env value is used
+when legal (`open` is refused on a server entrypoint and becomes
+`authenticated` with a loud warning; unknown values fail closed to
+`authenticated`), else the §4 default (`open` on desktop,
+`authenticated` on server); `demo_mode` is written explicitly either
+way. Afterwards the row is authoritative and changes go through
+`nx_auth.instance.request_transition` (admin action, guard-railed).
+Call it through your own `PATCH /api/v1/admin/instance` endpoint — the
+kit does not expose mode changes on the auth router.
+
+## Boot guards
+
+`nx_auth.boot.validate_boot_config(...)` is the family fail-soft-in-dev
+/ abort-in-prod check (ADR-0028): three-or-none key pins, weak-key
+refusal (kit blocklist + a `weak_secrets=` hook for product fixtures),
+Fernet-material `DATA_KEY` checks, and `DEBUG`/`DEMO_MODE` refusing
+production boot. Call it from your lifespan when `APP_ENV=production`;
+it returns non-fatal warnings to log and raises `BootConfigError` on
+fatal problems.
 
 ## Upgrading between kit versions
 

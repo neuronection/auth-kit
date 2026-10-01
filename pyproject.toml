@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "neuronection-auth-kit"
-version = "0.2.0"
+version = "0.3.0"
 description = "Family identity & authentication library: tokens, passwords, sessions, cookies/CSRF, instance access modes"
 readme = "README.md"
 license = "Apache-2.0"
@@ -53,7 +53,7 @@ select = ["E", "F", "I", "SIM", "UP"]
 
 [tool.mypy]
 strict = true
-python_version = "0.2.0"
+python_version = "3.11"
 mypy_path = "src"
 
 [tool.pytest.ini_options]

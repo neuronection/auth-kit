@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Literal
 
@@ -11,6 +12,77 @@ DEFAULT_REFRESH_ABSOLUTE_DAYS = 30
 DEFAULT_LOCKOUT_THRESHOLD = 5
 DEFAULT_LOCKOUT_MINUTES = 15
 DEFAULT_PASSWORD_MIN_LENGTH = 10
+
+# §16 knob map (ADR-0028 §3): every tunable of `AuthConfig` with its
+# canonical `<PREFIX>_<SUFFIX>` env name and parser. `from_env` and
+# `knob_overrides` both read through this table, so the OS-environment
+# and Settings-backed paths can never drift apart (contract case §18.14).
+_KNOB_SPECS: tuple[tuple[str, str, type], ...] = (
+    ("AUTH_ACCESS_TTL_MINUTES", "access_ttl_minutes", int),
+    ("AUTH_REFRESH_TTL_DAYS", "refresh_ttl_days", int),
+    ("AUTH_REFRESH_ABSOLUTE_DAYS", "refresh_absolute_days", int),
+    ("AUTH_LOCKOUT_THRESHOLD", "lockout_threshold", int),
+    ("AUTH_LOCKOUT_MINUTES", "lockout_minutes", int),
+    ("AUTH_PASSWORD_MIN_LENGTH", "password_min_length", int),
+    ("REGISTRATION_ENABLED", "registration_enabled", bool),
+    ("COOKIE_SECURE", "cookie_secure", bool),
+    ("TRUSTED_PROXY_COUNT", "trusted_proxy_count", int),
+    ("RATELIMIT_AUTH", "auth_rate_per_minute", int),
+    ("RATELIMIT_AUTH_EMAIL", "auth_email_rate_per_minute", int),
+)
+
+#: Canonical `<PREFIX>_<SUFFIX>` env names of every tunable knob.
+AUTH_KNOB_ENV_NAMES: tuple[str, ...] = tuple(suffix for suffix, _, _ in _KNOB_SPECS)
+
+_TRUE_VALUES = frozenset({"1", "true", "yes", "on"})
+_FALSE_VALUES = frozenset({"0", "false", "no", "off"})
+
+
+def _parse_bool(raw: object) -> bool | None:
+    if isinstance(raw, bool):
+        return raw
+    text = str(raw).strip().lower()
+    if text in _TRUE_VALUES:
+        return True
+    if text in _FALSE_VALUES:
+        return False
+    return None
+
+
+def _parse_int(raw: object) -> int | None:
+    if isinstance(raw, bool):
+        return None
+    if isinstance(raw, int):
+        return raw
+    try:
+        return int(str(raw).strip())
+    except ValueError:
+        return None
+
+
+def knob_overrides(
+    prefix: str, getter: Callable[[str], object | None]
+) -> dict[str, object]:
+    """Build `AuthConfig` kwargs from Settings-backed values (ADR-0028 §3).
+
+    `getter` receives the canonical env name (`<PREFIX>_<SUFFIX>`) and
+    returns the value — or `None` when unset. Products back it with their
+    pydantic `Settings` (which already merged `.env` + OS env, OS env
+    winning per key) so `.env`-file values reach the kit config exactly
+    like process-environment ones; the kit's own `os.environ` read stays
+    the fallback layer. Missing/blank/unparseable values fall back to the
+    family defaults — never to an insecure value (the 24h access cap is
+    enforced by `__post_init__` regardless of source).
+    """
+    kwargs: dict[str, object] = {}
+    for suffix, field_name, parser in _KNOB_SPECS:
+        raw = getter(f"{prefix}_{suffix}")
+        if raw is None or raw == "":
+            continue
+        parsed = _parse_bool(raw) if parser is bool else _parse_int(raw)
+        if parsed is not None:
+            kwargs[field_name] = parsed
+    return kwargs
 
 
 @dataclass(frozen=True)
@@ -62,26 +134,15 @@ class AuthConfig:
 
     @classmethod
     def from_env(cls, prefix: str, iss: str, **overrides: object) -> AuthConfig:
-        """Read `<P>_AUTH_*` env vars (init-time configuration).
+        """Read `<PREFIX>_<SUFFIX>` env vars (init-time configuration).
 
-        `iss` (the product slug) is a code constant, not env. Missing/
-        unparseable values fall back to the family defaults — never to an
-        insecure value (the 24h access cap is enforced by
-        `__post_init__` regardless of source).
+        `iss` (the product slug) is a code constant, not env. Knobs are
+        read through `AUTH_KNOB_ENV_NAMES` (same table as
+        `knob_overrides`, so both configuration paths cover identical
+        names); missing/unparseable values fall back to the family
+        defaults — never to an insecure value (the 24h access cap is
+        enforced by `__post_init__` regardless of source).
         """
-
-        def _int(name: str, default: int) -> int:
-            raw = os.environ.get(f"{prefix}_{name}")
-            try:
-                return int(raw) if raw else default
-            except ValueError:
-                return default
-
-        def _bool(name: str, default: bool) -> bool:
-            raw = os.environ.get(f"{prefix}_{name}")
-            if raw is None:
-                return default
-            return raw.strip().lower() in {"1", "true", "yes", "on"}
 
         identity_raw = os.environ.get(f"{prefix}_IDENTITY_MODE", "server")
         identity: Literal["server", "desktop"] = (
@@ -90,16 +151,7 @@ class AuthConfig:
         kwargs: dict[str, object] = {
             "iss": iss,
             "identity_mode": identity,
-            "access_ttl_minutes": _int("AUTH_ACCESS_TTL_MINUTES", DEFAULT_ACCESS_TTL_MINUTES),
-            "refresh_ttl_days": _int("AUTH_REFRESH_TTL_DAYS", DEFAULT_REFRESH_TTL_DAYS),
-            "refresh_absolute_days": _int(
-                "AUTH_REFRESH_ABSOLUTE_DAYS", DEFAULT_REFRESH_ABSOLUTE_DAYS
-            ),
-            "lockout_threshold": _int("AUTH_LOCKOUT_THRESHOLD", DEFAULT_LOCKOUT_THRESHOLD),
-            "lockout_minutes": _int("AUTH_LOCKOUT_MINUTES", DEFAULT_LOCKOUT_MINUTES),
-            "registration_enabled": _bool("REGISTRATION_ENABLED", True),
-            "cookie_secure": _bool("COOKIE_SECURE", False),
-            "trusted_proxy_count": _int("TRUSTED_PROXY_COUNT", 0),
+            **knob_overrides(prefix, os.environ.get),
         }
         kwargs.update(overrides)
         return cls(**kwargs)  # type: ignore[arg-type]

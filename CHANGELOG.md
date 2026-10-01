@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-10-01
+
+### Added
+- **Identity glue (ADR-0028, contract §4):** `IdentityMode`
+  (StrEnum `server|desktop`, parsing fails closed to `server`) and
+  `initialize_instance(store, *, identity_mode, auth_mode_env,
+  demo_mode_env, product=…)` — the single family implementation of the
+  init-only rules: §4.4 `open`-on-server coercion with a loud warning,
+  unknown `AUTH_MODE` fails closed to `authenticated`, post-init env/CLI
+  flips are ignored loudly, `demo_mode` is written explicitly either
+  way. (`nx_auth.instance`)
+- **`nx_auth.boot` — production boot guards:** `validate_boot_config(...)`
+  (parameterized lift of the family fail-soft-in-dev / abort-in-prod
+  policy): three-or-none key pins, weak/short key refusal with a product
+  `weak_secrets=` extension hook, Fernet-material checks for
+  `DATA_KEY` + rotation entries, distinct-pins rule, unpinned keys fatal
+  on a server / generated `auth_keys.json` on desktop, and
+  `DEBUG`/`DEMO_MODE` refusing production boot. `BootConfigError` on
+  fatal problems.
+- **§16 knob map:** `AUTH_KNOB_ENV_NAMES` + `knob_overrides(prefix,
+  getter)` route Settings-backed values into `AuthConfig.from_env`
+  overrides, so `.env`-file values reach the kit config exactly like OS
+  environment ones (contract case §18.14).
+- **`KeyRing.load_for(product, config_dir)`** — the family-standard
+  resolution (env pins all-three-or-none > 0600 `auth_keys.json` >
+  generate).
+- Contract cases **13** (boot guards) and **14** (knob map) in
+  `CONTRACT_CASES` + the family §18 checklist.
+
+### Changed
+- `AuthConfig.from_env` now reads `<P>_RATELIMIT_AUTH`,
+  `<P>_RATELIMIT_AUTH_EMAIL` and `<P>_AUTH_PASSWORD_MIN_LENGTH` from env
+  (previously code defaults only) and shares one parse path with
+  `knob_overrides`; unparseable values fall back to the family defaults
+  as documented (previously an unparseable bool read as `False`).
+
+### Fixed
+- `[tool.mypy] python_version` was the package version (`0.2.0`) — an
+  invalid interpreter spec mypy warned about on every run. Now `3.11`
+  (matching `requires-python`).
+
 ## [0.2.0] — 2026-09-30
 
 ### Added

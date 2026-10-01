@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -8,10 +9,34 @@ from typing import TYPE_CHECKING, Literal
 if TYPE_CHECKING:
     from nx_auth.protocols import InstanceStore
 
+logger = logging.getLogger(__name__)
+
 
 class InstanceMode(StrEnum):
     OPEN = "open"
     AUTHENTICATED = "authenticated"
+
+
+VALID_AUTH_MODES: tuple[str, ...] = tuple(mode.value for mode in InstanceMode)
+
+
+class IdentityMode(StrEnum):
+    """Entrypoint half of the instance-mode matrix (contract §4).
+
+    `SERVER` is the web/docker entrypoint; `DESKTOP` is the product
+    shell (`<P> app`, ADR-0010). Parsing fails **closed to `SERVER`** —
+    anything unknown gets the stricter half (ADR-0028).
+    """
+
+    SERVER = "server"
+    DESKTOP = "desktop"
+
+
+def parse_identity_mode(raw: str | None) -> IdentityMode:
+    """Parse the entrypoint mode; unknown/missing ⇒ `SERVER` (fail-closed)."""
+    if raw is not None and raw.strip().lower() == IdentityMode.DESKTOP.value:
+        return IdentityMode.DESKTOP
+    return IdentityMode.SERVER
 
 
 @dataclass(frozen=True)
@@ -81,6 +106,83 @@ def parse_auth_mode(raw: str | None) -> InstanceMode | None:
     if raw == "authenticated":
         return InstanceMode.AUTHENTICATED
     return None
+
+
+def initialize_instance(
+    store: InstanceStore,
+    *,
+    identity_mode: IdentityMode | str,
+    auth_mode_env: str,
+    demo_mode_env: bool,
+    product: str = "AUTH",
+) -> str:
+    """Seed `instance_settings` on an empty DB; return the effective mode (§4).
+
+    The single family implementation of the init-only rules (ADR-0028):
+
+    - empty DB ⇒ write `auth_mode` (env value if legal; else the §4
+      default: `open` on desktop, `authenticated` on server) and
+      `demo_mode` explicitly, either way (§13);
+    - `open` on a server entrypoint is never legal (§4.4) — the write
+      becomes `authenticated` with a loud warning;
+    - an unknown env value fails closed to `authenticated` with a loud
+      warning;
+    - existing DB ⇒ the stored value wins; env/CLI flips are ignored with
+      a loud warning (mode changes are authenticated admin actions
+      through `request_transition`, never launch-time).
+
+    `product` is the env prefix (`SA`, `CAREER`, …) used in warnings.
+    """
+    identity = parse_identity_mode(str(identity_mode))
+    env_mode = auth_mode_env.strip().lower()
+    if env_mode and env_mode not in VALID_AUTH_MODES:
+        logger.warning(
+            "%s_AUTH_MODE=%r is not a valid mode (%s) — failing closed to authenticated",
+            product,
+            auth_mode_env,
+            "/".join(VALID_AUTH_MODES),
+        )
+        env_mode = InstanceMode.AUTHENTICATED.value
+
+    stored = store.get("auth_mode")
+    if stored is None:
+        mode = env_mode or (
+            InstanceMode.OPEN.value
+            if identity is IdentityMode.DESKTOP
+            else InstanceMode.AUTHENTICATED.value
+        )
+        if identity is not IdentityMode.DESKTOP and mode == InstanceMode.OPEN.value:
+            logger.warning(
+                "%s_AUTH_MODE=open is not legal on a server entrypoint "
+                "(contract §4.4) — initializing as authenticated",
+                product,
+            )
+            mode = InstanceMode.AUTHENTICATED.value
+        store.set("auth_mode", mode)
+        store.set("demo_mode", "true" if demo_mode_env else "false")
+        logger.info(
+            "instance_settings initialized: auth_mode=%s (identity_mode=%s)",
+            mode,
+            identity.value,
+        )
+        return mode
+
+    if env_mode and env_mode != stored:
+        logger.warning(
+            "%s_AUTH_MODE=%s ignored — instance_settings.auth_mode=%s is "
+            "authoritative (contract §4: mode changes are authenticated "
+            "admin actions, never launch-time)",
+            product,
+            env_mode,
+            stored,
+        )
+    if demo_mode_env and store.get("demo_mode") != "true":
+        logger.warning(
+            "%s_DEMO_MODE=true ignored — instance_settings.demo_mode is "
+            "authoritative after initialization (contract §13)",
+            product,
+        )
+    return stored
 
 
 @dataclass(frozen=True)

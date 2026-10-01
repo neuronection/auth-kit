@@ -1,10 +1,16 @@
+import logging
+
+import pytest
 from fastapi.testclient import TestClient
 
 from nx_auth.config import AuthConfig
 from nx_auth.instance import (
+    IdentityMode,
     InstanceMode,
     InstanceState,
     effective_auth_mode,
+    initialize_instance,
+    parse_identity_mode,
     read_state,
     request_transition,
 )
@@ -273,3 +279,128 @@ class _EmptyStore:
 
     def set(self, key: str, value: str) -> None:  # pragma: no cover - unused
         del key, value
+
+
+class _MemoryStore:
+    def __init__(self) -> None:
+        self._data: dict[str, str] = {}
+
+    def get(self, key: str) -> str | None:
+        return self._data.get(key)
+
+    def set(self, key: str, value: str) -> None:
+        self._data[key] = value
+
+
+# --- initialize_instance (§4 init-only rules; ADR-0028) ----------------
+
+
+def test_parse_identity_mode_fails_closed_to_server() -> None:
+    assert parse_identity_mode("desktop") is IdentityMode.DESKTOP
+    assert parse_identity_mode("DESKTOP") is IdentityMode.DESKTOP
+    assert parse_identity_mode(" desktop ") is IdentityMode.DESKTOP
+    for raw in (None, "", "server", "SERVER", "laptop", "desktop-ish", "Desktops"):
+        assert parse_identity_mode(raw) is IdentityMode.SERVER
+
+
+def test_initialize_desktop_defaults_open() -> None:
+    store = _MemoryStore()
+    mode = initialize_instance(
+        store,
+        identity_mode=IdentityMode.DESKTOP,
+        auth_mode_env="",
+        demo_mode_env=False,
+    )
+    assert mode == InstanceMode.OPEN.value
+    assert store.get("auth_mode") == "open"
+    assert store.get("demo_mode") == "false"
+
+
+def test_initialize_desktop_honors_authenticated_env() -> None:
+    """S13: desktop + AUTH_MODE=authenticated ⇒ login at boot."""
+    store = _MemoryStore()
+    mode = initialize_instance(
+        store,
+        identity_mode="desktop",
+        auth_mode_env="authenticated",
+        demo_mode_env=False,
+    )
+    assert mode == InstanceMode.AUTHENTICATED.value
+
+
+def test_initialize_server_defaults_authenticated() -> None:
+    store = _MemoryStore()
+    mode = initialize_instance(
+        store, identity_mode="server", auth_mode_env="", demo_mode_env=False
+    )
+    assert mode == InstanceMode.AUTHENTICATED.value
+
+
+def test_initialize_server_open_coerced_authenticated(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """S1: `open` on a server entrypoint is never legal (§4.4)."""
+    store = _MemoryStore()
+    with caplog.at_level(logging.WARNING):
+        mode = initialize_instance(
+            store,
+            identity_mode=IdentityMode.SERVER,
+            auth_mode_env="open",
+            demo_mode_env=False,
+        )
+    assert mode == InstanceMode.AUTHENTICATED.value
+    assert store.get("auth_mode") == "authenticated"
+    assert any("§4.4" in record.message for record in caplog.records)
+
+
+def test_initialize_unknown_env_fails_closed(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """S2: junk AUTH_MODE ⇒ warn + authenticated on both entrypoints."""
+    for identity in (IdentityMode.DESKTOP, IdentityMode.SERVER):
+        store = _MemoryStore()
+        with caplog.at_level(logging.WARNING):
+            mode = initialize_instance(
+                store,
+                identity_mode=identity,
+                auth_mode_env="WideOpen",
+                demo_mode_env=False,
+            )
+        assert mode == InstanceMode.AUTHENTICATED.value
+    assert any("not a valid mode" in record.message for record in caplog.records)
+
+
+def test_initialize_demo_mode_written_explicitly() -> None:
+    """S4: demo_mode is stored either way at init, never left unset."""
+    store = _MemoryStore()
+    initialize_instance(
+        store, identity_mode="server", auth_mode_env="", demo_mode_env=True
+    )
+    assert store.get("demo_mode") == "true"
+    fresh = _MemoryStore()
+    initialize_instance(
+        fresh, identity_mode="server", auth_mode_env="", demo_mode_env=False
+    )
+    assert fresh.get("demo_mode") == "false"
+
+
+def test_initialize_post_init_flips_ignored_loudly(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """S3/S4: stored values win; env/CLI flips warn and change nothing."""
+    store = _MemoryStore()
+    initialize_instance(
+        store, identity_mode="server", auth_mode_env="", demo_mode_env=False
+    )
+    with caplog.at_level(logging.WARNING):
+        mode = initialize_instance(
+            store,
+            identity_mode="server",
+            auth_mode_env="open",
+            demo_mode_env=True,
+        )
+    assert mode == InstanceMode.AUTHENTICATED.value
+    assert store.get("auth_mode") == "authenticated"
+    assert store.get("demo_mode") == "false"
+    assert any("authoritative" in record.message for record in caplog.records)
+    assert any("DEMO_MODE" in record.message for record in caplog.records)

@@ -62,10 +62,13 @@ time.
 | Property | Behavior |
 |---|---|
 | DB-authoritative | read from the store on every request (`read_state` / `effective_auth_mode`) |
-| Init-only | the env seeds it **only on an empty table**; later env flips are ignored |
+| Init-only | `initialize_instance` seeds it **only on an empty table**; later env flips are ignored with a loud warning |
 | Fail-closed | a missing or unknown value reads as `authenticated` |
 | Server rule | `open` is illegal on a server entrypoint — first-boot seeding converts it to `authenticated` with a loud warning |
 | Mode changes | only through `request_transition` (admin-gated, guard-railed) — never at launch time |
+
+The entrypoint half is `IdentityMode` (`server` | `desktop`); parsing
+fails closed to `server` (`parse_identity_mode`).
 
 Token/instance coupling (no-bypass):
 

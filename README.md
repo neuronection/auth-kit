@@ -11,7 +11,7 @@ access modes** with a fail-closed default, Desktop Identity Mode
 `_kid` fingerprints, per-row context binding), and the shared security
 test kit.
 
-[![Status](https://img.shields.io/badge/status-0.2.0-blue.svg)](CHANGELOG.md)
+[![Status](https://img.shields.io/badge/status-0.3.0-blue.svg)](CHANGELOG.md)
 [![License](https://img.shields.io/badge/license-Apache%202.0-green.svg)](LICENSE)
 
 ## Install

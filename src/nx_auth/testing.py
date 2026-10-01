@@ -47,6 +47,11 @@ CONTRACT_CASES: tuple[str, ...] = (
     "11 demo principal on non-demo instance => 401; demo seeder refuses non-demo targets",
     "12 key separation: refresh token verifies under SESSION_KEY => rejected; "
     "DATA_KEY decrypts no JWTs",
+    "13 boot guards: production refuses partial/weak/duplicate key pins and "
+    "non-Fernet DATA_KEY material; DEBUG/DEMO_MODE refuse production boot; "
+    "unpinned keys fatal on server, generated 0600 auth_keys.json on desktop",
+    "14 knob map: every §16 tunable reachable from .env and OS env (OS env "
+    "wins); unprefixed names inert; .env walk-up disabled in production",
 )
 
 

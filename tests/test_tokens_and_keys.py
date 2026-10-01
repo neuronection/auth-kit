@@ -140,3 +140,12 @@ def test_all_three_env_keys_accepted(monkeypatch: pytest.MonkeyPatch) -> None:
     ring = KeyRing.from_env("KIT")
     assert ring is not None
     assert ring.session_key.endswith("q")
+
+
+def test_load_for_config_dir_resolution(tmp_path: Path) -> None:
+    """ADR-0028 §5: env pins > 0600 auth_keys.json in the config dir > generate."""
+    ring = KeyRing.load_for("SA", tmp_path)
+    persisted = tmp_path / "auth_keys.json"
+    assert persisted.is_file()
+    assert stat.S_IMODE(persisted.stat().st_mode) == 0o600
+    assert KeyRing.load_for("SA", tmp_path) == ring
