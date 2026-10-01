@@ -1,3 +1,4 @@
+
 """Password-confirming actions share login's defenses (S17, §7/§10).
 
 A hijacked session must not get unlimited guesses at `PATCH
@@ -7,9 +8,12 @@ login (423 once tripped) and every call rides the auth rate limit
 (429 + Retry-After).
 """
 
+import pytest
 from fastapi.testclient import TestClient
 
 from nx_auth.testing import csrf_headers, make_test_app
+
+pytestmark = pytest.mark.contract  # identity-auth §18 contract cases
 
 PASSWORD = "supersecret1"
 

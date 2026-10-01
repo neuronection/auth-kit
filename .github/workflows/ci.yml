@@ -23,6 +23,8 @@ jobs:
         run: mypy src/nx_auth tests
       - name: Pytest
         run: pytest -q
+      - name: Contract drift gate (identity-auth §18)
+        run: pytest -q -m contract
 
   gitleaks:
     runs-on: ubuntu-latest

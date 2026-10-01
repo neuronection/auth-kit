@@ -9,6 +9,6 @@ if [ ! -x "$PYTHON" ]; then
   exit 1
 fi
 
-"$PYTHON" -m ruff check .
+"$PYTHON" -m ruff check src tests
 "$PYTHON" -m mypy src/nx_auth tests
 "$PYTHON" -m pytest -q

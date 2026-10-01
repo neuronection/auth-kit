@@ -45,7 +45,7 @@ class KeyRing:
         # chars of entropy, and operators must match that bar. This is
         # the kit's enforcement point for the family rule; products with
         # their own Settings keep their boot-time copy of the same check.
-        for role, value in zip(_KEY_ROLES, values):
+        for role, value in zip(_KEY_ROLES, values, strict=True):
             normalized = value.strip()
             if len(normalized) < _MIN_KEY_CHARS or normalized.lower() in _PLACEHOLDER_KEYS:
                 raise ValueError(

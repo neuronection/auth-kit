@@ -18,6 +18,8 @@ from nx_auth.sqlalchemy_stores import SqlInstanceStore, SqlProfileStore, SqlUser
 from nx_auth.testing import make_test_app, make_test_keyring
 from nx_auth.tokens import AuthMode, TokenKind, mint_token
 
+pytestmark = pytest.mark.contract  # identity-auth §18 contract cases
+
 CONFIG = AuthConfig(iss="testkit")
 
 

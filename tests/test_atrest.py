@@ -155,7 +155,7 @@ def test_string_layer_rotation_ring() -> None:
 def test_context_mismatch_rejected() -> None:
     ring = _ring()
     wrapped = ring.encrypt_value("patient-secret", context="integration-A")
-    with pytest.raises(ValueError, match="different\\s+context"):
+    with pytest.raises(ValueError, match="different context"):
         ring.decrypt_value(wrapped, context="integration-B")
     # same context and the no-context decrypt path pass
     assert ring.decrypt_value(wrapped, context="integration-A") == "patient-secret"

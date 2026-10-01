@@ -8,7 +8,7 @@ version = "0.3.1"
 description = "Family identity & authentication library: tokens, passwords, sessions, cookies/CSRF, instance access modes"
 readme = "README.md"
 license = "Apache-2.0"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -45,11 +45,20 @@ packages = ["src/nx_auth"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py311"
-extend-exclude = ["scripts/version_manager.py"]
+target-version = "py312"
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "SIM", "UP"]
+select = ["E", "W", "F", "I", "UP", "B", "C4", "SIM", "RUF"]
+
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = [
+    "fastapi.Depends",
+    "fastapi.Query",
+    "fastapi.Header",
+    "fastapi.Body",
+    "fastapi.File",
+    "fastapi.Form",
+]
 
 [tool.mypy]
 strict = true
@@ -58,3 +67,8 @@ mypy_path = "src"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    # identity-auth §18 contract cases — the drift gate against the family
+    # test kit (CI runs `pytest -m contract` as an explicit step).
+    "contract: implements an identity-auth §18 contract case (family drift gate)",
+]

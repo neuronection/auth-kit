@@ -38,6 +38,7 @@ __all__ = [
     "Principal",
     "TokenError",
     "TokenKind",
+    "__version__",
     "get_current_user",
     "get_optional_principal",
     "initialize_instance",
@@ -50,5 +51,4 @@ __all__ = [
     "require_admin",
     "validate_boot_config",
     "verify_token",
-    "__version__",
 ]

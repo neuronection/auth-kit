@@ -10,6 +10,7 @@ from nx_auth.keys import KeyRing
 from nx_auth.testing import forge_token, make_test_keyring
 from nx_auth.tokens import AuthMode, TokenError, TokenKind, mint_token, verify_token
 
+pytestmark = pytest.mark.contract  # identity-auth §18 contract cases
 CONFIG = AuthConfig(iss="testkit")
 
 
