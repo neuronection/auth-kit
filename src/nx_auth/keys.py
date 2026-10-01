@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import secrets
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -115,11 +116,32 @@ class KeyRing:
         return ring
 
     @classmethod
-    def load_for(cls, product: str, config_dir: Path) -> KeyRing:
-        """Family-standard resolution (ADR-0028 §5): env pins > 0600 file > generate.
+    def load_for(
+        cls,
+        product: str,
+        config_dir: Path,
+        *,
+        pinned: Sequence[str | None] | None = None,
+    ) -> KeyRing:
+        """Family-standard resolution (ADR-0028 §5): pins > 0600 file > generate.
 
-        `product` is the env prefix (`SA`, `CAREER`, …) for `<P>_*_KEY`
-        pinning; the ring persists as `auth_keys.json` in `config_dir`.
-        Products call exactly this — no local resolution copies.
+        Precedence: explicit `pinned` values (Settings-backed — env vars
+        *and* the deployment `.env` file, OS env winning per key) > env
+        (`<PREFIX>_*_KEY`, all three or none) > 0600 `auth_keys.json` in
+        `config_dir` > generate on first run. `product` is the env
+        prefix (`SA`, `CAREER`, …). Products call exactly this — no
+        local resolution copies.
         """
+        if pinned is not None and any(pinned):
+            if not all(pinned):
+                raise ValueError(
+                    f"partial key pin for {product!r}: provide all three of "
+                    f"{product}_SESSION_KEY/{product}_REFRESH_KEY/"
+                    f"{product}_DATA_KEY or none (identity-auth §8)"
+                )
+            return cls(
+                session_key=pinned[0] or "",
+                refresh_key=pinned[1] or "",
+                data_key=pinned[2] or "",
+            )
         return cls.load_or_generate(config_dir / "auth_keys.json", product)

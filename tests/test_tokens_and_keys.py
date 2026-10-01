@@ -149,3 +149,28 @@ def test_load_for_config_dir_resolution(tmp_path: Path) -> None:
     assert persisted.is_file()
     assert stat.S_IMODE(persisted.stat().st_mode) == 0o600
     assert KeyRing.load_for("SA", tmp_path) == ring
+
+
+def test_load_for_settings_backed_pins(tmp_path: Path) -> None:
+    """Explicit pins (Settings merged .env + OS env) win over the file."""
+    pinned = (
+        "s-pin-0123456789abcdefghijklmnopqrstuv",
+        "r-pin-0123456789abcdefghijklmnopqrstuv",
+        "d-pin-0123456789abcdefghijklmnopqrstuv",
+    )
+    ring = KeyRing.load_for("SA", tmp_path, pinned=pinned)
+    assert ring.session_key == pinned[0]
+    assert not (tmp_path / "auth_keys.json").exists()
+    # all-None falls through to file/generate
+    fallback = KeyRing.load_for("SA", tmp_path, pinned=(None, None, None))
+    assert fallback != ring
+    assert (tmp_path / "auth_keys.json").exists()
+
+
+def test_load_for_partial_pins_fail_closed(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="partial key pin"):
+        KeyRing.load_for(
+            "SA",
+            tmp_path,
+            pinned=("only-session-0123456789abcdefghijklmnopq", None, None),
+        )

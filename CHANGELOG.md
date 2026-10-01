@@ -30,9 +30,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   getter)` route Settings-backed values into `AuthConfig.from_env`
   overrides, so `.env`-file values reach the kit config exactly like OS
   environment ones (contract case §18.14).
-- **`KeyRing.load_for(product, config_dir)`** — the family-standard
-  resolution (env pins all-three-or-none > 0600 `auth_keys.json` >
-  generate).
+- **`KeyRing.load_for(product, config_dir, *, pinned=None)`** — the
+  family-standard resolution: Settings-backed pins (env **and** the
+  deployment `.env`, OS env winning per key) > env pins
+  all-three-or-none > 0600 `auth_keys.json` > generate.
 - Contract cases **13** (boot guards) and **14** (knob map) in
   `CONTRACT_CASES` + the family §18 checklist.
 
