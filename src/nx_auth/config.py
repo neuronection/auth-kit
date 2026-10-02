@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import logging
 import os
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Literal
 
 from nx_auth.instance import IdentityMode, parse_identity_mode
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_ACCESS_TTL_MINUTES = 60
 MAX_ACCESS_TTL_MINUTES = 24 * 60
@@ -14,6 +17,14 @@ DEFAULT_REFRESH_ABSOLUTE_DAYS = 30
 DEFAULT_LOCKOUT_THRESHOLD = 5
 DEFAULT_LOCKOUT_MINUTES = 15
 DEFAULT_PASSWORD_MIN_LENGTH = 10
+
+# Lower bounds: knobs may tune, but never disable a guard. The password
+# floor is the §7 family policy (10 chars) — the knob can only tighten
+# it. Rate limits must stay positive (0/negative refuses every request).
+MIN_LOCKOUT_THRESHOLD = 1
+MIN_LOCKOUT_MINUTES = 1
+MIN_PASSWORD_MIN_LENGTH = 10
+MIN_RATE_PER_MINUTE = 1
 
 _KnobParser = Callable[[object], object | None]
 
@@ -103,18 +114,39 @@ def knob_overrides(
     pydantic `Settings` (which already merged `.env` + OS env, OS env
     winning per key) so `.env`-file values reach the kit config exactly
     like process-environment ones; the kit's own `os.environ` read stays
-    the fallback layer. Missing/blank/unparseable values fall back to the
-    family defaults — never to an insecure value (the 24h access cap is
-    enforced by `__post_init__` regardless of source).
+    the fallback layer.
+
+    Fallback semantics (deliberate, fail-safe in every case):
+
+    - missing/blank values fall back silently to the family defaults;
+    - unparsable values are **dropped with a loud warning naming the env
+      name and the offending value** — a typo degrades to the documented
+      default, never to a silently mis-parsed one (`SA_COOKIE_SECURE=maybe`
+      must not quietly mean `False`);
+    - parseable-but-destructive bounds (a `0` lockout window, a zero rate
+      limit, a password floor below §7) are refused by
+      `AuthConfig.__post_init__` with `ValueError` — the config fails
+      closed instead of booting with a guard disabled. The 24h access
+      cap is enforced there regardless of source.
     """
     kwargs: dict[str, object] = {}
-    for suffix, field_name, _kind, parser in _KNOB_SPECS:
-        raw = getter(f"{prefix}_{suffix}")
+    for suffix, field_name, kind, parser in _KNOB_SPECS:
+        env_name = f"{prefix}_{suffix}"
+        raw = getter(env_name)
         if raw is None or raw == "":
             continue
         parsed = parser(raw)
-        if parsed is not None:
-            kwargs[field_name] = parsed
+        if parsed is None:
+            logger.warning(
+                "%s=%r is not a valid %s value — ignoring it; the family "
+                "default for %s applies",
+                env_name,
+                raw,
+                kind,
+                field_name,
+            )
+            continue
+        kwargs[field_name] = parsed
     return kwargs
 
 
@@ -152,6 +184,32 @@ class AuthConfig:
             )
         if self.refresh_ttl_days < 1 or self.refresh_absolute_days < self.refresh_ttl_days:
             raise ValueError("refresh TTLs must satisfy 1 <= rolling <= absolute")
+        # Lower bounds (F8): a knob may tune a guard, never disable it —
+        # `AUTH_LOCKOUT_MINUTES=0` would disable lockout, `0` rate limits
+        # would refuse every request, and a password floor below the §7
+        # policy would gut the password rule. Refuse the config instead.
+        if self.lockout_threshold < MIN_LOCKOUT_THRESHOLD:
+            raise ValueError(f"lockout_threshold must be >= {MIN_LOCKOUT_THRESHOLD}")
+        if self.lockout_minutes < MIN_LOCKOUT_MINUTES:
+            raise ValueError(
+                f"lockout_minutes must be >= {MIN_LOCKOUT_MINUTES} "
+                "(0 would disable the lockout window)"
+            )
+        if self.password_min_length < MIN_PASSWORD_MIN_LENGTH:
+            raise ValueError(
+                f"password_min_length must be >= {MIN_PASSWORD_MIN_LENGTH} "
+                "(contract §7 floor — the knob may only tighten the policy)"
+            )
+        if (
+            self.auth_rate_per_minute < MIN_RATE_PER_MINUTE
+            or self.auth_email_rate_per_minute < MIN_RATE_PER_MINUTE
+        ):
+            raise ValueError(
+                f"auth rate limits must be >= {MIN_RATE_PER_MINUTE} per minute "
+                "(0 would refuse every request)"
+            )
+        if self.trusted_proxy_count < 0:
+            raise ValueError("trusted_proxy_count must be >= 0")
 
     @property
     def access_ttl_seconds(self) -> int:
@@ -174,9 +232,11 @@ class AuthConfig:
         §16 knob map (same table as `knob_overrides`, so both
         configuration paths cover identical names) and parsed by the one
         family parsers (`parse_identity_mode` normalizes the entrypoint
-        mode); missing/unparseable values fall back to the family
-        defaults — never to an insecure value (the 24h access cap is
-        enforced by `__post_init__` regardless of source).
+        mode). Fallback semantics are `knob_overrides`': missing/blank ⇒
+        family defaults silently; unparsable ⇒ dropped with a loud
+        warning naming the env name and value; destructive bounds ⇒
+        `ValueError` from `__post_init__` (which also enforces the 24h
+        access cap regardless of source).
         """
 
         kwargs: dict[str, object] = {

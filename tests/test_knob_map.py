@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+import logging
 
 import pytest
 
@@ -122,3 +123,90 @@ def test_overrides_beat_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "TST", iss="test", **knob_overrides("TST", lambda _: "true")
     )
     assert config.cookie_secure is True
+
+
+# --- F8: knob values never fail open on typos or destructive bounds ---
+
+
+def test_unparsable_knobs_warn_and_fall_back_to_defaults(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A typo is never silently mis-parsed: each dropped value warns
+    naming the env name and value, and the documented family default
+    (here: the fail-closed one) applies."""
+    monkeypatch.setenv("TST_COOKIE_SECURE", "maybe")
+    monkeypatch.setenv("TST_AUTH_LOCKOUT_THRESHOLD", "oops")
+    monkeypatch.setenv("TST_RATELIMIT_AUTH_EMAIL", "many")
+    monkeypatch.setenv("TST_IDENTITY_MODE", "laptop")
+    with caplog.at_level(logging.WARNING):
+        config = AuthConfig.from_env("TST", iss="test")
+    assert config.cookie_secure is False
+    assert config.lockout_threshold == 5
+    assert config.auth_email_rate_per_minute == 30
+    assert config.identity_mode == "server"
+    for name, value in (
+        ("TST_COOKIE_SECURE", "maybe"),
+        ("TST_AUTH_LOCKOUT_THRESHOLD", "oops"),
+        ("TST_RATELIMIT_AUTH_EMAIL", "many"),
+        ("TST_IDENTITY_MODE", "laptop"),
+    ):
+        assert any(
+            name in record.message and value in record.message
+            for record in caplog.records
+        ), f"no warning naming {name}={value}"
+
+
+def test_unparsable_settings_backed_knobs_warn_and_drop(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The Settings-backed routing path reports the same way (one map,
+    two paths)."""
+    values: dict[str, object] = {"SA_RATELIMIT_AUTH": "many"}
+    with caplog.at_level(logging.WARNING):
+        overrides = knob_overrides("SA", values.get)
+    assert "auth_rate_per_minute" not in overrides
+    assert any(
+        "SA_RATELIMIT_AUTH" in record.message and "many" in record.message
+        for record in caplog.records
+    )
+
+
+def test_destructive_bounds_are_refused() -> None:
+    """F8: a knob may tune a guard, never disable it — zero lockout
+    window, gutted password floor and dead rate limits raise instead of
+    booting."""
+    with pytest.raises(ValueError, match="lockout_minutes"):
+        AuthConfig(iss="test", lockout_minutes=0)
+    with pytest.raises(ValueError, match="lockout_threshold"):
+        AuthConfig(iss="test", lockout_threshold=0)
+    with pytest.raises(ValueError, match="password_min_length"):
+        AuthConfig(iss="test", password_min_length=0)
+    with pytest.raises(ValueError, match="password_min_length"):
+        AuthConfig(iss="test", password_min_length=9)
+    with pytest.raises(ValueError, match="rate limits"):
+        AuthConfig(iss="test", auth_rate_per_minute=0)
+    with pytest.raises(ValueError, match="rate limits"):
+        AuthConfig(iss="test", auth_email_rate_per_minute=0)
+
+
+def test_destructive_bounds_refused_on_the_env_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("TST_AUTH_LOCKOUT_MINUTES", "0")
+    with pytest.raises(ValueError, match="lockout_minutes"):
+        AuthConfig.from_env("TST", iss="test")
+
+
+def test_minimum_bounds_are_accepted() -> None:
+    """Positive counterparts: the lowest legal values construct fine."""
+    config = AuthConfig(
+        iss="test",
+        lockout_threshold=1,
+        lockout_minutes=1,
+        password_min_length=10,
+        auth_rate_per_minute=1,
+        auth_email_rate_per_minute=1,
+        trusted_proxy_count=0,
+    )
+    assert config.lockout_minutes == 1
+    assert config.password_min_length == 10
