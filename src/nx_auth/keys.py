@@ -55,8 +55,11 @@ class KeyRing:
                     '`python -c "import secrets; print(secrets.token_urlsafe(48))" '
                     "— refusing to construct the keyring"
                 )
-        if len(set(values)) != 3:
-            raise ValueError("session/refresh/data keys must be distinct")
+        # Distinctness compares trimmed values (F10): a whitespace-padded
+        # copy of one key is not a second key. Case is significant here —
+        # keys are byte strings and differ when spelled differently.
+        if len({value.strip() for value in values}) != 3:
+            raise ValueError("session/refresh/data keys must be distinct (trimmed)")
 
     @classmethod
     def generate(cls) -> KeyRing:

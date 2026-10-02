@@ -101,7 +101,13 @@ def validate_boot_config(
     if not production:
         return []
 
-    blocked = DEFAULT_WEAK_SECRETS | frozenset(weak_secrets)
+    # Blocklist matching is case- and whitespace-insensitive (F10): a
+    # case-variant paste of a long committed fixture key must not evade
+    # the hook — `KeyRing` normalizes its placeholder check the same way.
+    blocked = frozenset(
+        secret.strip().lower()
+        for secret in DEFAULT_WEAK_SECRETS | frozenset(weak_secrets)
+    )
     pins: list[tuple[str, str | None]] = [
         (f"{key_env_prefix}_{role.upper()}_KEY", value)
         for role, value in (
@@ -125,7 +131,7 @@ def validate_boot_config(
         if not value:
             continue
         normalized = value.strip()
-        if normalized in blocked or len(normalized) < _MIN_KEY_CHARS:
+        if normalized.lower() in blocked or len(normalized) < _MIN_KEY_CHARS:
             fatal.append(
                 f"{name} is a known dev/test value or shorter than "
                 f"{_MIN_KEY_CHARS} characters — pin a long random value, or "
@@ -139,7 +145,7 @@ def validate_boot_config(
         problem = _check_fernet(prior)
         if problem:
             fatal.append(f"{key_env_prefix}_DATA_KEY_PREVIOUS entry {index}: {problem}")
-    if len(provided) == 3 and len(set(provided)) != 3:
+    if len(provided) == 3 and len({value.strip() for value in provided}) != 3:
         fatal.append(
             f"{key_env_prefix}_SESSION_KEY/{key_env_prefix}_REFRESH_KEY/"
             f"{key_env_prefix}_DATA_KEY must be distinct values (identity-auth §8)"

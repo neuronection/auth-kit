@@ -83,6 +83,22 @@ def test_product_weak_secrets_hook() -> None:
         _check(session_key=fixture_key, weak_secrets=[fixture_key])
 
 
+def test_weak_secret_matching_is_case_insensitive() -> None:
+    """F10: a case-variant (or padded) paste of a long committed fixture
+    key cannot evade the product weak-secrets hook — matching
+    normalizes like `KeyRing` does."""
+    fixture_key = "Fixture-Key-0123456789abcdefghijklmnopqrst"
+    for spelled in (fixture_key, fixture_key.upper(), f"  {fixture_key}  "):
+        with pytest.raises(BootConfigError, match="known dev/test value"):
+            _check(session_key=spelled, weak_secrets=[fixture_key])
+
+
+def test_case_variant_of_a_good_pin_passes() -> None:
+    """Positive counterpart: normalization only affects matching — a
+    long random pin spelled in mixed case is still valid."""
+    assert _check(session_key=SESSION_KEY.upper()) == []
+
+
 def test_debug_and_demo_refused_in_production() -> None:
     """S8: production entrypoints abort on DEBUG / DEMO_MODE (§13)."""
     with pytest.raises(BootConfigError, match="DEMO_MODE"):
@@ -103,6 +119,19 @@ def test_data_key_must_be_fernet_material() -> None:
 def test_duplicate_pins_refused() -> None:
     with pytest.raises(BootConfigError, match="distinct"):
         _check(refresh_key=SESSION_KEY)
+
+
+def test_whitespace_padded_duplicate_pins_refused() -> None:
+    """F10: distinctness compares trimmed values — a padded copy of one
+    pin is not a second pin."""
+    with pytest.raises(BootConfigError, match="distinct"):
+        _check(refresh_key=f"  {SESSION_KEY}  ")
+
+
+def test_padded_but_distinct_pins_pass() -> None:
+    """Positive counterpart: padding alone never rejects genuinely
+    distinct pins."""
+    assert _check(session_key=f" {SESSION_KEY} ") == []
 
 
 def test_no_pins_server_fatal_desktop_warns() -> None:

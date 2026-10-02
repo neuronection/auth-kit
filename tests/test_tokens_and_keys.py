@@ -94,6 +94,25 @@ def test_keyring_requires_three_distinct_keys() -> None:
         KeyRing(session_key="", refresh_key="b", data_key="c")
 
 
+def test_keyring_rejects_whitespace_padded_duplicate_keys() -> None:
+    """F10: distinctness compares trimmed values — a padded copy of one
+    key is not a second key."""
+    session = "session-key-0123456789abcdefghijklmnopqrstuv"
+    with pytest.raises(ValueError, match="distinct"):
+        KeyRing(session_key=session, refresh_key=f"  {session}\t", data_key="y" * 32)
+
+
+def test_keyring_accepts_padded_but_distinct_keys() -> None:
+    """Positive counterpart: padding alone never rejects genuinely
+    distinct keys."""
+    ring = KeyRing(
+        session_key="  session-key-0123456789abcdefghijklmnopqrstuv",
+        refresh_key="refresh-key-0123456789abcdefghijklmnopqrstuv",
+        data_key="y" * 32,
+    )
+    assert ring.session_key.startswith("  ")
+
+
 def test_keyring_refuses_weak_secrets() -> None:
     """§8 weak-secret boot guard: every construction path (env, file,
     direct) funnels through KeyRing.__post_init__, so weak material can
