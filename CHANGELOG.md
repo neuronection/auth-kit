@@ -7,12 +7,91 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.2] — 2026-10-02
+
+### Security
+- **Stored `open` is coerced on every server boot (§4.4, F6).** A DB
+  storing `auth_mode="open"` — exactly the state the study B1 bug
+  produced — booted silently open on a server entrypoint: the §4.4
+  `open → authenticated` coercion only ran while seeding an empty DB.
+  `initialize_instance` now applies it to the *stored* row too — the row
+  is rewritten to `authenticated`, the same loud `§4.4` operator warning
+  fires, and one `instance.auth_mode_coerced` audit event is written
+  through the new injected `audit=` `AuditSink` parameter (optional —
+  the coercion and warning never depend on it). Desktop keeps a stored
+  `open` untouched and stored `authenticated` stays a pure no-op, both
+  pinned by tests.
+- **Weak-secret matching is case-insensitive; key distinctness ignores
+  padding (F10).** `validate_boot_config` matched its weak/placeholder
+  blocklist case-sensitively while `KeyRing` normalizes case — a
+  case-variant paste of a long committed fixture key evaded the product
+  `weak_secrets` hook. Blocklist matching now compares stripped,
+  lowercased values, and the distinctness checks (boot pins and `KeyRing`
+  construction) compare trimmed values (case stays significant — keys
+  are byte strings).
+- **`auth_keys.json` is never world-readable (F11).** `save_to_file`
+  created the file with the default umask and chmodded afterwards — a
+  brief world-readable window over live key material — and `from_file`
+  loaded a 0644 file silently. Writes now go through
+  `os.open(..., 0o600)` + `os.replace` (atomic: 0600 from the first
+  byte, no partial file for a concurrent reader, a previously loose mode
+  cannot survive a re-save), and loading a group/world-readable file
+  warns loudly and repairs it to 0600 in place (documented warn+repair
+  choice — the keys still load; a failing chmod warns, never dies).
+
+### Added
+- **Checklist ↔ tests binding (F9).** `CONTRACT_CASE_TESTS` (in
+  `nx_auth.testing`) names the proving kit test modules per checklist
+  row, and `tests/test_contract_checklist.py` fails the suite loudly
+  when a row loses its tests, a proving module disappears, or a
+  `contract`-marked test module proves no row — the checklist a product
+  copies can no longer drift from the tests that pin it.
+
 ### Changed
+- **Knob values no longer fail open on typos or destructive bounds (F8).**
+  Every unparsable knob value is dropped with a warning naming the env
+  name and the offending value — on both routing paths (OS env and
+  Settings-backed) — and the documented fallback to the family default
+  is unchanged. Parseable-but-destructive bounds are refused at
+  construction (`ValueError`): `lockout_threshold >= 1`,
+  `lockout_minutes >= 1` (a `0` window disabled lockout),
+  `password_min_length >= 10` (the §7 family floor — the knob may only
+  tighten it), auth rate limits `>= 1` per minute, and
+  `trusted_proxy_count >= 0`.
+- **The §16 knob map covers every `AuthConfig` tunable (S12/F7).**
+  `identity_mode` (`<P>_IDENTITY_MODE`) and `require_shell_secret`
+  (`<P>_REQUIRE_SHELL_SECRET`) join `AUTH_KNOB_ENV_NAMES`/`_KNOB_SPECS`;
+  the fields that cannot be env-routed (`iss`, `demo_user_id`,
+  `auth_exempt_prefixes`, `extra`) are excluded **kit-side** in
+  `NON_KNOB_FIELDS`, a dict of field → stated reason. The test-local
+  `_NON_KNOB_FIELDS` carve-out is gone. *Migration note for products:*
+  passing `identity_mode=`/`require_shell_secret=` explicitly alongside
+  `**knob_overrides(...)` now raises a duplicate-kwarg `TypeError` —
+  drop the explicit kwargs (the map routes them) when re-pinning.
+- **One identity-mode parser (F17).** `parse_identity_mode` is the
+  single family parser: `AuthConfig.from_env` reads `<P>_IDENTITY_MODE`
+  through the knob map, `validate_boot_config` parses with it, and
+  `AuthConfig.__post_init__` normalizes direct construction —
+  `SA_IDENTITY_MODE=Desktop` no longer splits the semantics of `DESKTOP`,
+  and junk fails closed to `server` everywhere.
+- **Family security checklist: 15 → 18 rows (F9).** `CONTRACT_CASES`
+  gains the §4 *init* rows — S1 (`open` seeded on server ⇒ coerced, and
+  a stored `open` row coerced at boot with the warning + audit event),
+  S2 (unknown `AUTH_MODE` env ⇒ seeded `authenticated`), S4 (`demo_mode`
+  written explicitly at init) — and case 6 regains its
+  `authenticated → open` transition-guard clause (refused while other
+  users exist and without the current password). Mirrored in family
+  guideline §18.
 - **Family tool-config parity (plan 20 Phase 7):** ruff config matches
   the product family byte-for-byte (py312, full rule set), the pytest
   config carries the `contract` marker, contract-case test files are
   marked (41 selected) and CI runs `pytest -m contract`. Requires
   Python ≥3.12 (family floor).
+
+### Fixed
+- Docs: "the family's 12-case security checklist" → 18; the
+  `docs/testing.md` case table lists all 18 rows (init rows included)
+  and the test inventory covers every test module (F17).
 
 
 ## [0.3.1] — 2026-10-01
