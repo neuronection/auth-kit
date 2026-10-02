@@ -36,9 +36,11 @@ CONTRACT_CASES: tuple[str, ...] = (
     "3 refresh rotation; replay of rotated token => family revoked + ver bump",
     "4 lockout: N failures => 423, unlocks after window",
     "5 cookie flags exact; CSRF enforced on cookie-authenticated POSTs; WS Origin checked",
-    "6 instance mode: authenticated DB + desktop => login required; env flip cannot "
-    "disable auth; unknown auth_mode fails closed; exchange absent unless open "
-    "desktop; local-boot rejected when authenticated",
+    "6 instance mode: authenticated DB + desktop launch => login required; env/CLI flip "
+    "cannot disable auth; unknown auth_mode => fail-closed; exchange endpoint absent "
+    "unless open desktop; local-boot token on authenticated instance => 401; "
+    "authenticated -> open refused while other users exist and without the current "
+    "password",
     "7 admin guard: non-admin => 403; last-admin rails hold",
     "8 profile binding: cross-user X-Profile-Id => 403; absent => 400 (server); "
     "profile-independent endpoints exempt; Default profile auto-provisioned",
@@ -54,7 +56,42 @@ CONTRACT_CASES: tuple[str, ...] = (
     "wins); unprefixed names inert; .env walk-up disabled in production",
     "15 password-confirming actions (admin/instance, me password change, "
     "account delete) share login's lockout counter and the auth rate limit",
+    "16 init (§4.4): open on a server entrypoint is never legal — seeded => "
+    "authenticated with the loud warning; a stored open row is coerced to "
+    "authenticated at boot with the same warning + an audit event; desktop keeps open",
+    "17 init (§4): unknown AUTH_MODE env => seeded authenticated with a loud "
+    "warning on both entrypoints",
+    "18 init (§13): demo_mode is written explicitly at init either way — never "
+    "left unset",
 )
+
+#: Which kit test modules prove each `CONTRACT_CASES` row (§18). Kit-side
+#: (never test-local) and bidirectionally enforced by
+#: `tests/test_contract_checklist.py`: a row without proving modules, a
+#: module that no longer exists, or a `contract`-marked test module that
+#: proves no row all fail the suite loudly — the checklist a product
+#: copies can never drift from the tests that pin it. Module names are
+#: bare (resolved under the consumer's `tests/` directory).
+CONTRACT_CASE_TESTS: dict[str, tuple[str, ...]] = {
+    "1": ("test_tokens_and_keys",),
+    "2": ("test_tokens_and_keys", "test_auth_flow"),
+    "3": ("test_auth_flow", "test_session_store"),
+    "4": ("test_auth_flow", "test_units"),
+    "5": ("test_cookies_csrf",),
+    "6": ("test_instance_modes", "test_user_management", "test_shell_gate"),
+    "7": ("test_user_management", "test_auth_flow"),
+    "8": ("test_auth_flow", "test_instance_modes"),
+    "9": ("test_auth_flow", "test_user_management"),
+    "10": ("test_auth_flow", "test_units"),
+    "11": ("test_instance_modes",),
+    "12": ("test_tokens_and_keys",),
+    "13": ("test_boot_guards",),
+    "14": ("test_knob_map",),
+    "15": ("test_password_confirmation_guard",),
+    "16": ("test_instance_modes",),
+    "17": ("test_instance_modes",),
+    "18": ("test_instance_modes",),
+}
 
 
 def make_test_keyring() -> KeyRing:
@@ -162,6 +199,7 @@ def make_test_app(
 
 __all__ = [
     "CONTRACT_CASES",
+    "CONTRACT_CASE_TESTS",
     "InstanceMode",
     "assert_cookie_flags",
     "csrf_headers",
