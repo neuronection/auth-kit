@@ -6,10 +6,16 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from typing import TYPE_CHECKING, Literal
 
+from nx_auth.audit import AuditEvent, AuditSink, NullAuditSink
+
 if TYPE_CHECKING:
     from nx_auth.protocols import InstanceStore
 
 logger = logging.getLogger(__name__)
+
+#: Audit action written whenever §4.4 coerces `open` → `authenticated`
+#: on a server entrypoint (seeding *and* stored-row paths).
+COERCE_AUDIT_ACTION = "instance.auth_mode_coerced"
 
 
 class InstanceMode(StrEnum):
@@ -108,6 +114,33 @@ def parse_auth_mode(raw: str | None) -> InstanceMode | None:
     return None
 
 
+def _coerce_open_on_server(*, product: str, audit: AuditSink | None) -> str:
+    """§4.4: `open` is never legal on a server entrypoint.
+
+    Shared by the seeding and stored-row paths: loud operator warning +
+    one audit event (`COERCE_AUDIT_ACTION`), returning the coerced
+    `authenticated` mode. The audit sink is injected — `initialize_instance`
+    keeps no global state; products pass their `AuditSink` so the coercion
+    is persisted, and without one the coercion still happens and warns but
+    no event is written.
+    """
+    logger.warning(
+        "%s_AUTH_MODE=open is not legal on a server entrypoint "
+        "(contract §4.4) — coercing to authenticated",
+        product,
+    )
+    sink: AuditSink = audit if audit is not None else NullAuditSink()
+    sink.record(
+        AuditEvent(
+            actor="system",
+            action=COERCE_AUDIT_ACTION,
+            resource="instance_settings.auth_mode",
+            outcome="coerced",
+        )
+    )
+    return InstanceMode.AUTHENTICATED.value
+
+
 def initialize_instance(
     store: InstanceStore,
     *,
@@ -115,6 +148,7 @@ def initialize_instance(
     auth_mode_env: str,
     demo_mode_env: bool,
     product: str = "AUTH",
+    audit: AuditSink | None = None,
 ) -> str:
     """Seed `instance_settings` on an empty DB; return the effective mode (§4).
 
@@ -129,9 +163,15 @@ def initialize_instance(
       warning;
     - existing DB ⇒ the stored value wins; env/CLI flips are ignored with
       a loud warning (mode changes are authenticated admin actions
-      through `request_transition`, never launch-time).
+      through `request_transition`, never launch-time) — **except** that
+      a *stored* `open` on a server entrypoint is coerced to
+      `authenticated` at boot just like a seeded one (§4.4 again: the
+      "server never runs open" invariant holds on every boot, loudly and
+      with an audit event). Desktop keeps a stored `open` untouched.
 
     `product` is the env prefix (`SA`, `CAREER`, …) used in warnings.
+    `audit` (optional) is the product's `AuditSink`; it receives one
+    `COERCE_AUDIT_ACTION` event whenever the §4.4 coercion fires.
     """
     identity = parse_identity_mode(str(identity_mode))
     env_mode = auth_mode_env.strip().lower()
@@ -152,12 +192,7 @@ def initialize_instance(
             else InstanceMode.AUTHENTICATED.value
         )
         if identity is not IdentityMode.DESKTOP and mode == InstanceMode.OPEN.value:
-            logger.warning(
-                "%s_AUTH_MODE=open is not legal on a server entrypoint "
-                "(contract §4.4) — initializing as authenticated",
-                product,
-            )
-            mode = InstanceMode.AUTHENTICATED.value
+            mode = _coerce_open_on_server(product=product, audit=audit)
         store.set("auth_mode", mode)
         store.set("demo_mode", "true" if demo_mode_env else "false")
         logger.info(
@@ -166,6 +201,12 @@ def initialize_instance(
             identity.value,
         )
         return mode
+
+    if stored == InstanceMode.OPEN.value and identity is not IdentityMode.DESKTOP:
+        # §4.4 covers the stored row too: a DB left `open` (e.g. seeded by
+        # an older buggy boot) must not run a server entrypoint open.
+        stored = _coerce_open_on_server(product=product, audit=audit)
+        store.set("auth_mode", stored)
 
     if env_mode and env_mode != stored:
         logger.warning(

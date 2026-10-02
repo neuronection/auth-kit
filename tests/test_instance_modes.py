@@ -3,8 +3,10 @@ import logging
 import pytest
 from fastapi.testclient import TestClient
 
+from nx_auth.audit import AuditEvent, AuditSink
 from nx_auth.config import AuthConfig
 from nx_auth.instance import (
+    COERCE_AUDIT_ACTION,
     IdentityMode,
     InstanceMode,
     InstanceState,
@@ -294,6 +296,14 @@ class _MemoryStore:
         self._data[key] = value
 
 
+class _RecordingAuditSink(AuditSink):
+    def __init__(self) -> None:
+        self.events: list[AuditEvent] = []
+
+    def record(self, event: AuditEvent) -> None:
+        self.events.append(event)
+
+
 # --- initialize_instance (§4 init-only rules; ADR-0028) ----------------
 
 
@@ -406,3 +416,100 @@ def test_initialize_post_init_flips_ignored_loudly(
     assert store.get("demo_mode") == "false"
     assert any("authoritative" in record.message for record in caplog.records)
     assert any("DEMO_MODE" in record.message for record in caplog.records)
+
+
+# --- F6: §4.4 applies to the *stored* row on every boot ---------------
+
+
+def test_initialize_stored_open_on_server_coerced_and_audited(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """S1/F6: a stored `open` row never boots a server entrypoint — the
+    boot coerces it to `authenticated`, loudly and with an audit event."""
+    store = _MemoryStore()
+    store.set("auth_mode", "open")
+    sink = _RecordingAuditSink()
+    with caplog.at_level(logging.WARNING):
+        mode = initialize_instance(
+            store,
+            identity_mode=IdentityMode.SERVER,
+            auth_mode_env="",
+            demo_mode_env=False,
+            audit=sink,
+        )
+    assert mode == InstanceMode.AUTHENTICATED.value
+    assert store.get("auth_mode") == "authenticated"
+    assert any("§4.4" in record.message for record in caplog.records)
+    recorded = [
+        (event.actor, event.action, event.resource, event.outcome) for event in sink.events
+    ]
+    assert recorded == [
+        (
+            "system",
+            COERCE_AUDIT_ACTION,
+            "instance_settings.auth_mode",
+            "coerced",
+        )
+    ]
+
+
+def test_initialize_stored_open_on_desktop_kept_untouched(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The positive counterpart: `open` is legal on desktop — no
+    coercion, no §4.4 warning, no audit event."""
+    store = _MemoryStore()
+    store.set("auth_mode", "open")
+    sink = _RecordingAuditSink()
+    with caplog.at_level(logging.WARNING):
+        mode = initialize_instance(
+            store,
+            identity_mode=IdentityMode.DESKTOP,
+            auth_mode_env="",
+            demo_mode_env=False,
+            audit=sink,
+        )
+    assert mode == InstanceMode.OPEN.value
+    assert store.get("auth_mode") == "open"
+    assert not any("§4.4" in record.message for record in caplog.records)
+    assert sink.events == []
+
+
+def test_initialize_stored_authenticated_is_a_no_op(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Stored `authenticated` on desktop: nothing to coerce — mode,
+    stored row, warnings and audit trail all stay exactly as they were."""
+    store = _MemoryStore()
+    store.set("auth_mode", "authenticated")
+    sink = _RecordingAuditSink()
+    with caplog.at_level(logging.WARNING):
+        mode = initialize_instance(
+            store,
+            identity_mode=IdentityMode.DESKTOP,
+            auth_mode_env="",
+            demo_mode_env=False,
+            audit=sink,
+        )
+    assert mode == InstanceMode.AUTHENTICATED.value
+    assert store.get("auth_mode") == "authenticated"
+    assert caplog.records == []
+    assert sink.events == []
+
+
+def test_initialize_seeding_coercion_audits_too() -> None:
+    """The seeding-path coercion emits the same §4.4 audit event (one
+    shared coercion helper for both paths)."""
+    store = _MemoryStore()
+    sink = _RecordingAuditSink()
+    mode = initialize_instance(
+        store,
+        identity_mode=IdentityMode.SERVER,
+        auth_mode_env="open",
+        demo_mode_env=False,
+        audit=sink,
+    )
+    assert mode == InstanceMode.AUTHENTICATED.value
+    assert [(event.action, event.outcome) for event in sink.events] == [
+        (COERCE_AUDIT_ACTION, "coerced")
+    ]
