@@ -6,7 +6,7 @@ product-level cases against their mounted kit.
 
 ## The contract cases
 
-`CONTRACT_CASES` is the family's 12-case security checklist (family
+`CONTRACT_CASES` is the family's 18-case security checklist (family
 guideline §18). Drift gates in every product CI re-run the applicable
 cases as `pytest -m contract`:
 
@@ -17,17 +17,29 @@ cases as `pytest -m contract`:
 | 3 | refresh rotation; replay of rotated token ⇒ family revoked + `ver` bump |
 | 4 | lockout: N failures ⇒ 423, unlocks after window |
 | 5 | cookie flags exact; CSRF enforced on cookie-authenticated POSTs; WS Origin checked |
-| 6 | instance mode: authenticated DB + desktop ⇒ login required; env flip cannot disable auth; unknown mode fails closed; exchange absent unless open desktop; local-boot rejected when authenticated |
+| 6 | instance mode: authenticated DB + desktop launch ⇒ login required; env/CLI flip cannot disable auth; unknown mode ⇒ fail-closed; exchange absent unless open desktop; local-boot rejected when authenticated; `authenticated → open` refused while other users exist and without the current password |
 | 7 | admin guard: non-admin ⇒ 403; last-admin rails hold |
 | 8 | profile binding: cross-user `X-Profile-Id` ⇒ 403; absent ⇒ 400 (server); exempt paths; Default auto-provisioned |
 | 9 | `is_active=false` ⇒ 401 everywhere; deletion cascades fully |
 | 10 | login error generic; no user enumeration (dummy-hash timing) |
 | 11 | demo principal on non-demo instance ⇒ 401; demo seeder refuses non-demo targets |
 | 12 | key separation: refresh verifies under `SESSION_KEY` ⇒ rejected; `DATA_KEY` decrypts no JWTs |
+| 13 | boot guards: production refuses partial/weak/duplicate key pins and non-Fernet `DATA_KEY` material; `DEBUG`/`DEMO_MODE` refuse production boot; unpinned keys fatal on server, generated 0600 `auth_keys.json` on desktop |
+| 14 | knob map: every §16 tunable reachable from `.env` and OS env (OS env wins); unprefixed names inert; `.env` walk-up disabled in production |
+| 15 | password-confirming actions (admin/instance, me password change, account delete) share login's lockout counter and the auth rate limit |
+| 16 | init (§4.4): `open` on a server entrypoint is never legal — seeded ⇒ `authenticated` with the loud warning; a stored `open` row is coerced to `authenticated` at boot with the same warning + an audit event; desktop keeps `open` |
+| 17 | init (§4): unknown `AUTH_MODE` env ⇒ seeded `authenticated` with a loud warning on both entrypoints |
+| 18 | init (§13): `demo_mode` written explicitly at init either way — never left unset |
 
 Cases 8 and the WS half of 5 are product-layer (profile binding, WS
 origin/ownership) — the kit proves the primitives; products prove their
 scoping.
+
+Checklist ↔ tests cannot drift apart: `CONTRACT_CASE_TESTS` (in
+`nx_auth.testing`) names the proving kit test modules per row, and
+`tests/test_contract_checklist.py` fails the suite if a row loses its
+tests, a proving module disappears, or a `contract`-marked test module
+proves no row.
 
 ## Toolkit API
 
@@ -99,6 +111,12 @@ cd auth-kit && ./scripts/verify.sh     # ruff + mypy strict + pytest
 The suite covers the full checklist: token/cookie/CSRF mechanics
 (`test_tokens_and_keys`, `test_cookies_csrf`), flows and rotation
 (`test_auth_flow`, `test_session_store`), lockout and policy units
-(`test_units`), instance-mode no-bypass + DIM states
-(`test_instance_modes`), enforcement cookie/Bearer resolution
-(`test_enforcement`), and the §12 surface (`test_user_management`).
+(`test_units`), instance-mode no-bypass + DIM states and the §4 init
+rules (`test_instance_modes`), enforcement cookie/Bearer resolution
+(`test_enforcement`), the per-boot shell-secret gate (`test_shell_gate`),
+the §12 surface (`test_user_management`), production boot guards
+(`test_boot_guards`), the §16 knob map and knob-value bounds
+(`test_knob_map`), the S17 password-confirmation guard
+(`test_password_confirmation_guard`), the at-rest cipher
+(`test_atrest`), and the checklist↔tests meta-gate
+(`test_contract_checklist`).

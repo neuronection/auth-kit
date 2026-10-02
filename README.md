@@ -74,10 +74,11 @@ only on `open` desktop instances; `demo` identities only on
 from nx_auth.testing import CONTRACT_CASES, make_test_app, csrf_headers, forge_token
 ```
 
-`CONTRACT_CASES` is the family's 12-case security checklist (token
+`CONTRACT_CASES` is the family's 18-case security checklist (token
 forgery/replay/expiry, lockout, cookie flags + CSRF, instance-mode
-bypasses, admin guard, demo rejection, key separation). The kit's own
-suite proves every kit-reachable case; consumers re-run the
+bypasses and init rules, admin guard, demo rejection, key separation,
+boot guards, the §16 knob map, password-confirming actions). The kit's
+own suite proves every kit-reachable case; consumers re-run the
 product-level ones (profile binding, WS origin) in their repos.
 
 ## Scope
