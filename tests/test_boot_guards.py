@@ -143,3 +143,14 @@ def test_no_pins_server_fatal_desktop_warns() -> None:
         production=True, identity_mode=IdentityMode.DESKTOP
     )
     assert any("auth_keys.json" in warning for warning in warnings)
+
+
+def test_identity_mode_normalized_by_the_one_parser() -> None:
+    """F17: boot guards parse the entrypoint mode exactly like the
+    <P>_IDENTITY_MODE knob — case/padding variants mean desktop, junk
+    fails closed to server."""
+    assert _check(identity_mode="Desktop") == []
+    warnings = validate_boot_config(production=True, identity_mode="  DESKTOP  ")
+    assert any("auth_keys.json" in warning for warning in warnings)
+    with pytest.raises(BootConfigError, match="missing"):
+        validate_boot_config(production=True, identity_mode="laptop")

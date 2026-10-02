@@ -27,7 +27,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Sequence
 from enum import StrEnum
 
-from nx_auth.instance import IdentityMode
+from nx_auth.instance import IdentityMode, parse_identity_mode
 
 # Known dev/test material — never production (identity-auth §8). Products
 # extend this via `weak_secrets=` with their own committed fixture values.
@@ -152,7 +152,9 @@ def validate_boot_config(
         )
 
     if not provided:
-        if str(identity_mode) == IdentityMode.DESKTOP.value:
+        # `parse_identity_mode` is the one family parser (F17): "Desktop"
+        # and junk behave exactly as in <P>_IDENTITY_MODE (fail-closed).
+        if parse_identity_mode(str(identity_mode)) is IdentityMode.DESKTOP:
             warnings.append(
                 "no pinned key ring — per-instance keys live in the generated "
                 "0600 auth_keys.json (identity-auth §8)"

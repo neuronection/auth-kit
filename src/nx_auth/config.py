@@ -176,6 +176,13 @@ class AuthConfig:
     extra: dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
+        # One identity parser everywhere (F17): direct construction is
+        # normalized exactly like <P>_IDENTITY_MODE — "Desktop"/" DESKTOP "
+        # mean the same thing on every path, and junk fails closed to
+        # `server` (the stricter half).
+        object.__setattr__(
+            self, "identity_mode", parse_identity_mode(self.identity_mode).value
+        )
         if not self.iss:
             raise ValueError("iss (product slug) is required")
         if not 1 <= self.access_ttl_minutes <= MAX_ACCESS_TTL_MINUTES:

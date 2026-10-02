@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import dataclasses
 import logging
+from typing import Literal, cast
 
 import pytest
 
@@ -85,6 +86,15 @@ def test_knob_map_routes_identity_mode_and_shell_secret(
     config = AuthConfig.from_env("TST", iss="test")
     assert config.identity_mode == "desktop"
     assert config.require_shell_secret is True
+
+
+def test_auth_config_normalizes_identity_mode() -> None:
+    """F17: one parser on every construction path — a direct
+    `AuthConfig(...)` normalizes exactly like `<P>_IDENTITY_MODE`."""
+    desktop = cast(Literal["server", "desktop"], " DESKTOP ")
+    assert AuthConfig(iss="test", identity_mode=desktop).identity_mode == "desktop"
+    junk = cast(Literal["server", "desktop"], "laptop")
+    assert AuthConfig(iss="test", identity_mode=junk).identity_mode == "server"
 
 
 def test_knob_overrides_reads_all_five_knobs_from_settings_style_getter() -> None:
