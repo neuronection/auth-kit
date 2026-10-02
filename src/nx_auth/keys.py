@@ -1,13 +1,18 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import secrets
+import stat
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+logger = logging.getLogger(__name__)
+
 KEY_BYTES = 32
+_KEY_FILE_MODE = 0o600
 _MIN_KEY_CHARS = 32  # token_urlsafe(32) → 43 chars; anything shorter is operator-supplied weakness
 _PLACEHOLDER_KEYS = frozenset(
     {"changeme", "change-me", "secret", "secret-key", "dev", "dev-key", "test", "test-key",
@@ -18,6 +23,28 @@ _KEY_ROLES = ("session", "refresh", "data")
 
 def generate_key() -> str:
     return secrets.token_urlsafe(KEY_BYTES)
+
+
+def _warn_and_repair_permissions(path: Path) -> None:
+    """F11: a group/world-readable `auth_keys.json` is exposed key
+    material — warn loudly and repair the mode to 0600 in place. A chmod
+    failure (read-only mount, foreign owner) is warned about, never
+    fatal; the file still loads."""
+    try:
+        mode = stat.S_IMODE(path.stat().st_mode)
+    except OSError:  # pragma: no cover - raced away; the read below decides
+        return
+    if mode & 0o077:
+        logger.warning(
+            "%s is group/world-readable (mode %04o) — key material must be "
+            "0600; repairing in place (rotate the keys if the host is shared)",
+            path,
+            mode,
+        )
+        try:
+            os.chmod(path, _KEY_FILE_MODE)
+        except OSError as exc:  # pragma: no cover - exotic mounts
+            logger.warning("could not repair %s permissions: %s", path, exc)
 
 
 @dataclass(frozen=True)
@@ -87,8 +114,17 @@ class KeyRing:
 
     @classmethod
     def from_file(cls, path: Path) -> KeyRing | None:
+        """Load `auth_keys.json`; `None` when the file is absent.
+
+        Permissions are policed on load too (F11): a group/world-readable
+        file is warned about and **repaired to 0600 in place** before its
+        content is read (the keys still load — the repair is exposure
+        hygiene, not a refusal). Kit-written files are 0600 from their
+        first byte (see `save_to_file`).
+        """
         if not path.is_file():
             return None
+        _warn_and_repair_permissions(path)
         raw = json.loads(path.read_text(encoding="utf-8"))
         return cls(
             session_key=str(raw["session"]),
@@ -97,13 +133,29 @@ class KeyRing:
         )
 
     def save_to_file(self, path: Path) -> None:
+        """Write `auth_keys.json` atomically at 0600 (contract §8).
+
+        The file is created with `os.open(..., 0o600)` semantics and
+        renamed into place (`os.replace`) — key material is never
+        group/world-readable, not even in the create→chmod window the
+        old write-then-chmod had, and a concurrent reader never observes
+        a partial file. Replacing the whole file also means a previously
+        loose mode cannot survive a re-save.
+        """
         path.parent.mkdir(parents=True, exist_ok=True)
         payload = json.dumps(
             {"session": self.session_key, "refresh": self.refresh_key, "data": self.data_key},
             indent=0,
         )
-        path.write_text(payload + "\n", encoding="utf-8")
-        os.chmod(path, 0o600)
+        tmp = path.with_name(f".{path.name}.{secrets.token_hex(8)}.tmp")
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, _KEY_FILE_MODE)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                os.fchmod(handle.fileno(), _KEY_FILE_MODE)
+                handle.write(payload + "\n")
+            os.replace(tmp, path)
+        finally:
+            tmp.unlink(missing_ok=True)
 
     @classmethod
     def load_or_generate(cls, path: Path, prefix: str) -> KeyRing:

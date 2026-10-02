@@ -1,3 +1,4 @@
+import logging
 import os
 import stat
 from datetime import UTC, datetime, timedelta
@@ -194,3 +195,59 @@ def test_load_for_partial_pins_fail_closed(tmp_path: Path) -> None:
             tmp_path,
             pinned=("only-session-0123456789abcdefghijklmnopq", None, None),
         )
+
+
+# --- F11: auth_keys.json permissions (0600 from the first byte) -------
+
+
+def test_save_to_file_is_0600_and_leaves_no_temp_litter(tmp_path: Path) -> None:
+    """F11: the file is created 0600 via os.open and renamed into place
+    — never created world-readable and chmodded afterwards."""
+    ring = make_test_keyring()
+    target = tmp_path / "auth_keys.json"
+    ring.save_to_file(target)
+    assert stat.S_IMODE(target.stat().st_mode) == 0o600
+    assert KeyRing.from_file(target) == ring
+    assert [entry.name for entry in tmp_path.iterdir()] == ["auth_keys.json"]
+
+
+def test_save_to_file_tightens_a_loose_existing_file(tmp_path: Path) -> None:
+    target = tmp_path / "auth_keys.json"
+    target.write_text("{}", encoding="utf-8")
+    os.chmod(target, 0o644)
+    make_test_keyring().save_to_file(target)
+    assert stat.S_IMODE(target.stat().st_mode) == 0o600
+
+
+def test_from_file_warns_and_repairs_loose_permissions(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """F11: a 0644 auth_keys.json still loads (the repair is hygiene,
+    not a refusal) but is warned about and repaired to 0600 in place."""
+    ring = make_test_keyring()
+    target = tmp_path / "auth_keys.json"
+    ring.save_to_file(target)
+    os.chmod(target, 0o644)
+    with caplog.at_level(logging.WARNING):
+        loaded = KeyRing.from_file(target)
+    assert loaded == ring
+    assert stat.S_IMODE(target.stat().st_mode) == 0o600
+    assert any(
+        str(target) in record.message and "0600" in record.message
+        for record in caplog.records
+    )
+
+
+def test_from_file_leaves_a_0600_file_untouched(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Positive counterpart: a correct file loads with no warning and no
+    permission change."""
+    ring = make_test_keyring()
+    target = tmp_path / "auth_keys.json"
+    ring.save_to_file(target)
+    with caplog.at_level(logging.WARNING):
+        loaded = KeyRing.from_file(target)
+    assert loaded == ring
+    assert stat.S_IMODE(target.stat().st_mode) == 0o600
+    assert caplog.records == []
