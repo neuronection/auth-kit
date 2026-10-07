@@ -1,0 +1,23 @@
+# gitleaks config — extends the default ruleset. The only suppressions are
+# COMMITTED TEST FIXTURE constants from the Track A hardening tests: known
+# fake literals (`fixture_key` values in tests/test_boot_guards.py, a
+# password-payload literal in tests/test_password_confirmation_guard.py).
+# `git log -S` shows each appears only inside `tests/` across all history,
+# and the production boot guards refuse them (S7 weak-secret pins).
+title = "auth-kit gitleaks"
+
+[extend]
+useDefault = true
+
+# Secret-targeted exact values (mirrors career e70b392): the regexes match
+# the fixture literals themselves, so any other value under the same names —
+# or anywhere else — stays flagged. Deliberately no `paths` here: allowlist
+# criteria combine with OR, so pairing these with a path would blanket-allow
+# every finding under that path.
+[[allowlists]]
+  description = "committed test-fixture constants — boot guards refuse them"
+  regexes = [
+    '''fixture-key-0123456789abcdefghijklmnopqrst''',
+    '''Fixture-Key-0123456789abcdefghijklmnopqrst''',
+    '''third-one-1234''',
+  ]
