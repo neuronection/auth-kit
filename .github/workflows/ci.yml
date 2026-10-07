@@ -9,7 +9,9 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.11", "3.12"]
+        # >=3.12 is the family floor (pyproject requires-python); 3.11 can
+        # never install the package, so its leg only ever red-gated PRs.
+        python-version: ["3.12"]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
