@@ -50,7 +50,12 @@ src/nx_auth/
 ├── tokens.py           mint/verify per kind, key-separated, contract claims
 ├── passwords.py        bcrypt ≥12, dummy-hash verify, ≥10-char policy
 ├── lockout.py          pure lockout state (threshold/window)
-├── ratelimit.py        sliding windows + trusted-proxy client_ip
+├── ratelimit.py        sliding windows + trusted-proxy client_ip;
+│                       auth limiters (RateLimiter) + the general family
+│                       limiter (Counter backends, frozen 5-bucket set,
+│                       RateLimitMiddleware + rate_limit dependency)
+├── headers.py          SecurityHeadersMiddleware + HeaderPolicy
+│                       (web/desktop CSP split, ?shell= marker gating)
 ├── cookies.py          cookie trio + double-submit CsrfMiddleware
 ├── shell.py            per-boot shell secret + middleware (desktop)
 ├── instance.py         instance modes, fail-closed read, transition guard rails

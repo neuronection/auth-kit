@@ -11,7 +11,7 @@ access modes** with a fail-closed default, Desktop Identity Mode
 `_kid` fingerprints, per-row context binding), and the shared security
 test kit.
 
-[![Status](https://img.shields.io/badge/status-0.3.2-blue.svg)](CHANGELOG.md)
+[![Status](https://img.shields.io/badge/status-0.4.0-blue.svg)](CHANGELOG.md)
 [![License](https://img.shields.io/badge/license-Apache%202.0-green.svg)](LICENSE)
 
 ## Install
@@ -109,6 +109,7 @@ disagreement):
 | §5 normative rows (users/sessions) | `protocols.py`, `sqlalchemy_stores.py` | [identity-model.md](docs/identity-model.md) |
 | §6 profiles | `ProfileStore`, `kit.ensure_profile` | [identity-model.md](docs/identity-model.md) |
 | §7 passwords/lockout/rate limits | `passwords.py`, `lockout.py`, `ratelimit.py` | [security.md](docs/security.md) |
+| §7 rate limits + response headers (plan 21) | `ratelimit.py` (Counter/`RateLimitPolicy`/middleware), `headers.py` | [security.md](docs/security.md) |
 | §8 token claims & lifetimes | `tokens.py`, `keys.py` | [tokens-and-cookies.md](docs/tokens-and-cookies.md) |
 | §8 at-rest (`DATA_KEY` family) | `atrest.py` | [atrest.md](docs/atrest.md) |
 | §9 user-client (Bearer) class | `deps.py`, `enforcement.py` | [enforcement.md](docs/enforcement.md) |

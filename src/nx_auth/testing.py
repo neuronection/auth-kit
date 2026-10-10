@@ -63,6 +63,22 @@ CONTRACT_CASES: tuple[str, ...] = (
     "warning on both entrypoints",
     "18 init (§13): demo_mode is written explicitly at init either way — never "
     "left unset",
+    "19 rate limits (R1-R8): burst above a bucket ceiling => 429 + Retry-After "
+    "(window resets); ceiling 0 disables the bucket; bucket windows are "
+    "independent; keyed limiters (per-user/per-integration/per-account) hold "
+    "across processes on the Redis counter; per-IP identity is the rightmost "
+    "trusted proxy hop (spoofed X-Forwarded-For ignored at "
+    "TRUSTED_PROXY_COUNT=0); a failed counter backend degrades open "
+    "(requests proceed, limiter logs)",
+    "20 security headers (H1/H3): every response — SPA static mounts included "
+    "— carries nosniff, X-Frame-Options: DENY, frame-ancestors 'none', "
+    "Referrer-Policy (nx_auth.headers policy object; per-product CSP choice)",
+    "21 CSP split (H2): web responses serve script-src 'self'; 'unsafe-eval' "
+    "appears only for a document carrying the valid per-boot ?shell= marker; "
+    "a stale or absent marker keeps the strict web CSP",
+    "22 rate-limit knobs (D5): every <P>_RATELIMIT_* ceiling is reachable "
+    "from both the .env file and the OS environment (OS env wins per key); "
+    "ceilings resolve per request, never frozen at mount time",
 )
 
 #: Which kit test modules prove each `CONTRACT_CASES` row (§18). Kit-side
@@ -91,6 +107,10 @@ CONTRACT_CASE_TESTS: dict[str, tuple[str, ...]] = {
     "16": ("test_instance_modes",),
     "17": ("test_instance_modes",),
     "18": ("test_instance_modes",),
+    "19": ("test_ratelimit_general",),
+    "20": ("test_headers",),
+    "21": ("test_headers",),
+    "22": ("test_ratelimit_general", "test_knob_map"),
 }
 
 

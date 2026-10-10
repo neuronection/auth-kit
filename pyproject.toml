@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "neuronection-auth-kit"
-version = "0.3.2"
+version = "0.4.0"
 description = "Family identity & authentication library: tokens, passwords, sessions, cookies/CSRF, instance access modes"
 readme = "README.md"
 license = "Apache-2.0"
@@ -38,6 +38,12 @@ dev = [
     "httpx>=0.27",
     "ruff>=0.6",
     "mypy>=1.10",
+]
+# plan 21 D2: the multi-process counter backend (uvicorn workers + Celery
+# sharing one Redis). Optional — the in-memory counter is the default and
+# the limiter degrades open when the backend is unreachable.
+redis = [
+    "redis>=5",
 ]
 
 [tool.hatch.build.targets.wheel]

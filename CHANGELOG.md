@@ -7,6 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-10-10
+
+### Added
+
+- **General-purpose family limiter in `nx_auth.ratelimit` (plan 21).**
+  A counter-pluggable limiter over the frozen five-bucket family set
+  (`AUTH, AUTH_EMAIL, AI, MCP, DEFAULT` — `BUCKETS`, enforced by
+  `normalize_bucket`): the `Counter` protocol (`incr(key, window) ->
+  count`) with an `InMemoryCounter` default (true sliding window,
+  single-process) and a `RedisCounter` under the new optional `redis`
+  extra (INCR+EXPIRE fixed windows shared across uvicorn/Celery
+  workers, keys verbatim so existing counter state survives adoption).
+  **Degrade-open is the family rule** — both the Redis counter and
+  `RateLimitPolicy.check` log a warning and let the request through on
+  backend failure. Mounting: `mount_rate_limit(app, policy=…,
+  bucket_for=…)` (per-IP `RateLimitMiddleware` + the policy for the
+  `rate_limit(bucket, *, prefix, default, key)` FastAPI dependency —
+  `default` gives health's route-fallback ceilings, `key` the keyed
+  per-user/per-integration limiters). Ceilings resolve **per request**
+  through the policy's `ceiling` callable so products can back them
+  with live Settings (`<P>_RATELIMIT_*` §16 knobs). The auth limiters
+  (`RateLimiter.allow`) are untouched — §7/S17 behavior unchanged.
+- **`nx_auth.headers` (new, plan 21):** `SecurityHeadersMiddleware` +
+  `HeaderPolicy` — the family baseline (`nosniff`, `X-Frame-Options:
+  DENY`, `Referrer-Policy: strict-origin-when-cross-origin`) with
+  career's CSP template as the family default (`web_csp()` /
+  `desktop_csp()`): the desktop variant (`'unsafe-eval'` for the
+  pywebview bridge) is served only to a document carrying the valid
+  per-boot `?shell=` marker (the `desktop_marker` predicate).
+  `web_csp=None` emits no CSP; `frame_overridable` keeps per-route
+  X-Frame-Options overrides working; `hsts_behind_proxy` emits HSTS
+  only when the client connection actually arrived over TLS. Opt-in
+  like the limiter — never wired into `install()`.
+- **Contract cases 19–22** in `nx_auth.testing.CONTRACT_CASES`
+  (rate-limit matrix R1–R8, header matrix H1/H3, the CSP split H2,
+  rate-limit knob routing) — proven kit-side by the new
+  `test_ratelimit_general.py` + `test_headers.py`; products pin them
+  with their own `pytest -m contract` tests (plan 20 D9 parity).
+
+### Changed
+
+- **Breaking (internal):** none — `RateLimiter`/`client_ip` keep their
+  v0.3 signatures; the new surface is additive.
+
 ## [0.3.2] — 2026-10-02
 
 ### Security

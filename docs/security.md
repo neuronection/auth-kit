@@ -43,6 +43,66 @@ spoof their IP and evade the limits.
 the effective budget multiplies per replica — a shared limit store is a
 tracked gap (S-P5) before scaling out.
 
+## Rate limits — the general family limiter (plan 21)
+
+`nx_auth.ratelimit` also provides the **general-purpose limiter** every
+product mounts for its HTTP surface (opt-in — never wired into
+`install()`):
+
+- **Frozen bucket set**: `AUTH`, `AUTH_EMAIL`, `AI`, `MCP`, `DEFAULT`
+  (`BUCKETS`; `normalize_bucket` refuses anything else — the vocabulary
+  lives only here).
+- **Counter backends** (`Counter` protocol, `incr(key, window) -> count`):
+  `InMemoryCounter` (default — true sliding window, single-process;
+  correct for career/study self-host + desktop) and `RedisCounter`
+  (optional `redis` extra — INCR+EXPIRE fixed windows shared by every
+  uvicorn/Celery worker; **degrades open**: a Redis outage logs and the
+  request proceeds — the limiter is never the outage). `RateLimitPolicy`
+  degrades open on *any* counter failure.
+- **Mounting**: `mount_rate_limit(app, policy=…, bucket_for=…)` adds
+  `RateLimitMiddleware` (per-IP, product's route→bucket table) and the
+  policy the `rate_limit(bucket, *, prefix, default, key)` FastAPI
+  dependency reads (`default` = the route's own ceiling when the policy
+  carries none — health's pre-§16 semantics; `key` selects a keyed
+  identity: per-user, per-integration).
+- **Ceilings** resolve **per request** through the policy's `ceiling`
+  callable — products back it with their `Settings` so the §16 knobs
+  (`<P>_RATELIMIT_{ENABLED,AUTH,AUTH_EMAIL,AI,MCP,DEFAULT}`) route from
+  `.env` and OS env identically (plan 20's knob machinery). `0`
+  disables a bucket; `None` ⇒ route default.
+- **Client identity**: `client_ip` (rightmost `trusted_proxy_count`
+  hops of `X-Forwarded-For`) — see above.
+
+Contract cases 19 + 22 in `testing.CONTRACT_CASES` pin this surface;
+`tests/test_ratelimit_general.py` proves them kit-side.
+
+## Security headers (plan 21)
+
+`nx_auth.headers.SecurityHeadersMiddleware` + `HeaderPolicy` — one
+middleware, per-product policy (`HeaderPolicy(web_csp=…,
+desktop_csp=…, shell_param="shell", frame_overridable=True,
+hsts_behind_proxy=False, extra=…)`):
+
+- family baseline on every response: `nosniff`,
+  `X-Frame-Options: DENY` (overridable per route when
+  `frame_overridable` — health's PDF-preview relaxation),
+  `Referrer-Policy: strict-origin-when-cross-origin`; the CSP body
+  carries `frame-ancestors 'none'`, `object-src 'none'`,
+  `base-uri 'self'`;
+- CSP comes from the family template (`web_csp()` / `desktop_csp()`,
+  career's body): web deployments serve `script-src 'self'`; the
+  **desktop variant** (adds `'unsafe-eval'` for the pywebview bridge)
+  is served only to a document whose `?shell=` query carries the valid
+  per-boot token (the `desktop_marker` predicate) — browsers never know
+  the token. `web_csp=None` emits no CSP (health's
+  API+separate-SPA-origin shape);
+- `hsts_behind_proxy=True` emits `Strict-Transport-Security` only when
+  the client's connection arrived over https (`X-Forwarded-Proto`'s
+  first — client-side — hop, else the ASGI scheme); HSTS otherwise
+  stays at the nginx layer (ADR-0005).
+
+Contract cases 20 + 21; `tests/test_headers.py` proves them kit-side.
+
 ## Token & session security
 
 - Key separation (SESSION/REFRESH/DATA) — cross-kind verification
