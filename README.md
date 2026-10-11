@@ -1,7 +1,7 @@
 # Neuronection Auth Kit
 
-The identity & authentication layer of the Neuronection assistant
-family: one implementation of the family auth contract — per-kind
+The security layer of the Neuronection assistant family: opt-in modules
+with one implementation each — the family auth contract (per-kind
 sessions with **key separation**, password accounts (bcrypt, lockout,
 rate limits, generic errors), refresh rotation with **reuse detection**,
 cookie sessions + double-submit CSRF, **DB-authoritative instance
