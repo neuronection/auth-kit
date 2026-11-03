@@ -16,6 +16,7 @@ consumed by every product backend.
 | [enforcement.md](enforcement.md) | `SessionAuthMiddleware`, the single `authenticate_session` path, the Bearer user-client class, exemptions, WebSocket guidance |
 | [desktop-mode.md](desktop-mode.md) | Desktop Identity Mode: the shell secret (§11), the per-boot exchange, and the shell-less dev shape (loopback-only) |
 | [security.md](security.md) | Password policy, lockout, rate limits, audit stream, threat-model notes and the known gap list |
+| [oauth.md](oauth.md) | Provider-delegation OAuth (plan 52 §13): PKCE S256, the single-use principal-bound bind-state law, single-flight refresh with rotation-crash safety, sealed token custody over `nx_auth.atrest`, the typed error vocabulary, and how a host plugs its own transport/state store/vault |
 | [testing.md](testing.md) | The shared security test kit: `make_test_app`, `CONTRACT_CASES`, token forging, cookie assertions, consumer drift gates |
 
 ## The contract in one paragraph

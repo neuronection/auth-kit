@@ -73,7 +73,14 @@ src/nx_auth/
 ├── principal.py        Principal (the only thing endpoints trust)
 ├── user_admin.py       /api/v1/me/* + /api/v1/admin/* (user management, §12)
 ├── atrest.py           DATA_KEY cipher: rotation ring, _kid, context binding
+├── oauth.py            provider-delegation OAuth (plan 52 §13): PKCE S256,
+│                       principal-bound single-use state, code exchange,
+│                       single-flight refresh + rotation-crash safety,
+│                       sealed token custody over atrest — transport/state/
+│                       vault are injected seams (no I/O, no provider names)
 └── testing.py          CONTRACT_CASES + forge/make_test_app/cookie+CSRF helpers
+                        + OAuth custody/refresh fakes (FakeTokenTransport,
+                        token_response, assert_no_token_leak)
 tests/                  the contract test suite (contract §18 subset)
 ```
 

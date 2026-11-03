@@ -8,7 +8,9 @@ cookie sessions + double-submit CSRF, **DB-authoritative instance
 access modes** with a fail-closed default, Desktop Identity Mode
 (auto-login, no login page), an audit hook, a tenants interface, the
 `nx_auth.atrest` Fernet cipher for **secrets at rest** (rotation ring,
-`_kid` fingerprints, per-row context binding), and the shared security
+`_kid` fingerprints, per-row context binding), the `nx_auth.oauth`
+**provider-delegation OAuth** module (PKCE, principal-bound state,
+single-flight refresh, sealed token custody), and the shared security
 test kit.
 
 [![Status](https://img.shields.io/badge/status-0.4.0-blue.svg)](CHANGELOG.md)
@@ -81,6 +83,36 @@ boot guards, the §16 knob map, password-confirming actions). The kit's
 own suite proves every kit-reachable case; consumers re-run the
 product-level ones (profile binding, WS origin) in their repos.
 
+## Provider-delegation OAuth (opt-in, plan 52 §13)
+
+```python
+from nx_auth.oauth import OAuthClient, TokenClient, TokenVault, authorize, InMemoryStateStore
+from nx_auth.atrest import SecretCipher
+
+client = OAuthClient(
+    client_id="…",                            # host/deployment config — never a shipped secret
+    token_url="https://oauth2.googleapis.com/token",
+    redirect_uri="https://app.example/oauth/callback",
+    authorize_url="https://accounts.google.com/o/oauth2/v2/auth",
+    scopes=("https://www.googleapis.com/auth/calendar",),   # verbatim catalog strings
+)
+states = InMemoryStateStore()                 # hosts plug Redis/SQL behind StateStore
+vault = TokenVault(my_sealed_store, cipher=SecretCipher.from_env("APP"))
+
+offer = authorize(client, store=states, principal_id=user.id)   # bind flow begins
+# … callback: states.consume(state, principal_id=user.id) → exchange_code(…) → client.store(…)
+access_token = TokenClient(client, vault=vault, transport=my_transport).access(binding_id)
+```
+
+PKCE S256, state that is **single-use, expiring, and bound to the
+authenticated principal** (the Rev 3 E12 anti-bind-CSRF law), typed
+closed-error mapping (`invalid_grant` → `needs-auth` **stop**),
+single-flight refresh with bounded full-jitter retry, rotation-crash
+safety (new grant persisted before the old is discarded), and sealed
+custody over `nx_auth.atrest`. No network of its own — inject a
+`TokenTransport` (hosts wrap httpx). Public clients need no secret;
+confidential ones MAY pass one. See [docs/oauth.md](docs/oauth.md).
+
 ## Scope
 
 - **In:** local auth (password), sessions, cookies/CSRF, instance
@@ -112,6 +144,7 @@ disagreement):
 | §7 rate limits + response headers (plan 21) | `ratelimit.py` (Counter/`RateLimitPolicy`/middleware), `headers.py` | [security.md](docs/security.md) |
 | §8 token claims & lifetimes | `tokens.py`, `keys.py` | [tokens-and-cookies.md](docs/tokens-and-cookies.md) |
 | §8 at-rest (`DATA_KEY` family) | `atrest.py` | [atrest.md](docs/atrest.md) |
+| §3/§12 provider-delegation OAuth (ADR-0052, plan 52) | `oauth.py` | [oauth.md](docs/oauth.md) |
 | §9 user-client (Bearer) class | `deps.py`, `enforcement.py` | [enforcement.md](docs/enforcement.md) |
 | §10 cookies, CSRF, WS | `cookies.py`, `enforcement.py` | [tokens-and-cookies.md](docs/tokens-and-cookies.md), [enforcement.md](docs/enforcement.md) |
 | §11 shell gate | `shell.py`, `dim.py` | [desktop-mode.md](docs/desktop-mode.md) |
@@ -131,6 +164,7 @@ Detailed docs live in [`docs/`](docs/README.md):
 - [enforcement.md](docs/enforcement.md) — middleware, `authenticate_session`, Bearer, WS
 - [desktop-mode.md](docs/desktop-mode.md) — DIM, shell gate, loopback rule
 - [security.md](docs/security.md) — passwords, lockout, rate limits, audit, threat model
+- [oauth.md](docs/oauth.md) — provider-delegation OAuth: PKCE, bind-state law, refresh, custody
 - [testing.md](docs/testing.md) — the test kit, `CONTRACT_CASES`, drift gates
 
 ## License

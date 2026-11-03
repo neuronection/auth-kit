@@ -7,6 +7,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`nx_auth.oauth` — provider-delegation OAuth for the Python family
+  hosts (plan 52 §13; ADR-0052 §3/§12; ADR-0042 posture).** One
+  opt-in, **stdlib-only** implementation replacing study's
+  `core/oauth.py` and health's `extensions/sdk/auth.py` hand-rolled
+  flows (retired on adoption, ADR-0040 §17):
+  - **PKCE (S256 only)** — `new_verifier`/`code_challenge`/`new_state`
+    (RFC 7636 vector pinned in tests), `build_authorize_url` with
+    verbatim scope lists, `prompt=consent`/`access_type=offline`
+    conveniences, and provider-quirk `extra_params` (catalog data wins
+    over conveniences). Public clients need no secret; a confidential
+    client MAY pass one for class-S deployments.
+  - **Bind state is single-use, expiring (~10 min) and bound to the
+    authenticated principal** (plan 52 §10 E12, the anti-bind-CSRF
+    law): `authorize()` issues a `StateRecord` through the host's
+    `StateStore`; `consume(state, principal_id=…)` is one atomic
+    single-use read — replay/expiry/principal-mismatch fail closed as
+    typed `invalid`/`not-ready`, a discarded flow answers `canceled`.
+    Reference `InMemoryStateStore`; hosts plug Redis/SQL (health's
+    Redis store is *not* imported — the module has no I/O of its own).
+  - **Token exchange + refresh over an injected `TokenTransport`**
+    (no network in tests; hosts wrap httpx): `exchange_code`,
+    `refresh_tokens` (carries an unrotated refresh token forward),
+    and `TokenClient` — the single-flight refresh policy: concurrent
+    callers await one attempt (followers adopt the leader's tokens or,
+    within the flight window, its typed failure), bounded full-jitter
+    backoff on transient errors with a capped `Retry-After`,
+    `invalid_grant` → `needs-auth` **stop**, and a call is never served
+    a token inside its 60 s expiry skew.
+  - **Rotation-crash safety** (ADR-0042 clause 6): the rotated grant is
+    persisted in one atomic `TokenVault.rotate` write *before* the old
+    record is discarded — a failing write leaves the old grant sealed
+    and raises typed `not-ready`; the broken chain fails closed and
+    re-binds.
+  - **Sealed custody over `nx_auth.atrest`** — `TokenVault` seals a
+    `TokenSet` under `context="oauth:<binding-id>"` (cut-and-paste
+    defense); `cipher=None` refuses every operation (`needs-secret` —
+    no keyring ⇒ no binding, no plaintext fallback). The no-leak law is
+    enforced in code: masked reprs (`TokenSet`/`OAuthClient`/
+    `StateRecord`), error details scrubbed of known secrets and URL
+    query strings (E12), token bodies never carried raw, unknown
+    provider fields dropped (`id_token` refused). The shared kit gains
+    `FakeTokenTransport`, `token_response`, and
+    `assert_no_token_leak` so hosts assert the same custody/refresh
+    properties (plan 52 §13 "test cases ride `nx_auth.testing`").
+  - **Closed typed error vocabulary** — `OAuthError` with
+    `code` ∈ `ERROR_CODES` (`needs-auth, needs-secret, needs-config,
+    invalid, rate-limited, unreachable, provider, not-ready,
+    canceled`), a `retryable` marker with per-code defaults,
+    `grant_error` (the provider's RFC 6749 string, kept verbatim), and
+    `retry_after`; raw exception strings never cross the boundary.
+  Docs: [docs/oauth.md](docs/oauth.md); tests: `tests/test_oauth.py`
+  (46 cases: PKCE vector, bind-state matrix, exchange mapping,
+  concurrency, rotation crash, custody, no-leak scans).
+
 ## [0.4.0] — 2026-10-10
 
 ### Added

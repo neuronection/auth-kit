@@ -8,6 +8,7 @@ app over an in-memory database.
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 import jwt
@@ -20,6 +21,7 @@ from nx_auth.config import AuthConfig
 from nx_auth.install import install
 from nx_auth.instance import InstanceMode
 from nx_auth.keys import KeyRing
+from nx_auth.oauth import TokenResponse
 from nx_auth.sqlalchemy_stores import (
     SqlAuditSink,
     SqlInstanceStore,
@@ -162,6 +164,84 @@ def csrf_headers(client: Any) -> dict[str, str]:
     return {"X-CSRF-Token": value}
 
 
+# ---------------------------------------------------------------------------
+# OAuth custody/refresh test helpers (plan 52 §13: these cases ride the
+# shared kit so every host asserts the same properties)
+# ---------------------------------------------------------------------------
+
+def token_response(
+    *,
+    status_code: int = 200,
+    access_token: str = "test-access-token",
+    refresh_token: str | None = "test-refresh-token",
+    expires_in: float | None = 3600.0,
+    scope: str = "calendar.read",
+    retry_after: float | None = None,
+    **extra_fields: object,
+) -> TokenResponse:
+    """A scripted token-endpoint reply for :class:`FakeTokenTransport`.
+
+    ``expires_in=None`` omits the field (provider grants without an
+    expiry); string ``**extra_fields`` round-trip into the JSON body
+    (``error=``/``error_description=`` drive the typed-error tests).
+    """
+    body: dict[str, object] = {"access_token": access_token, "token_type": "Bearer"}
+    if refresh_token is not None:
+        body["refresh_token"] = refresh_token
+    if expires_in is not None:
+        body["expires_in"] = expires_in
+    if scope:
+        body["scope"] = scope
+    body.update(extra_fields)
+    return TokenResponse(status_code=status_code, data=body, retry_after=retry_after)
+
+
+class FakeTokenTransport:
+    """Scripted :class:`nx_auth.oauth.TokenTransport` — OAuth tests' network.
+
+    Replies pop left-to-right; an :class:`Exception` entry is raised
+    (simulates transport-level failures); an exhausted script asserts
+    rather than silently succeeding (an unexpected extra request is a
+    test failure, exactly what the single-flight tests pin).
+    """
+
+    def __init__(self, *script: TokenResponse | Exception) -> None:
+        self._script = list(script)
+        self.calls: list[tuple[str, dict[str, str]]] = []
+
+    def post_form(
+        self,
+        url: str,
+        data: Mapping[str, str],
+        *,
+        headers: Mapping[str, str] | None = None,
+    ) -> TokenResponse:
+        self.calls.append((url, dict(data)))
+        if not self._script:
+            raise AssertionError("FakeTokenTransport script exhausted — unexpected extra request")
+        step = self._script.pop(0)
+        if isinstance(step, Exception):
+            raise step
+        return step
+
+
+def assert_no_token_leak(*objects: object, secrets: Sequence[str]) -> None:
+    """The custody assertion: no secret value appears in ``str()``/``repr()``
+    of any returned/error object (plan 52 §13 — every host re-asserts
+    this against its own surfaces)."""
+
+    def scan(obj: object, where: str) -> None:
+        text = f"{obj!s}\n{obj!r}"
+        for secret in secrets:
+            if secret and secret in text:
+                raise AssertionError(
+                    f"token material leaked into {where} (a {type(obj).__name__})"
+                )
+
+    for obj in objects:
+        scan(obj, "a returned surface")
+
+
 def make_test_app(
     *,
     auth_mode: str | None = "authenticated",
@@ -220,10 +300,13 @@ def make_test_app(
 __all__ = [
     "CONTRACT_CASES",
     "CONTRACT_CASE_TESTS",
+    "FakeTokenTransport",
     "InstanceMode",
     "assert_cookie_flags",
+    "assert_no_token_leak",
     "csrf_headers",
     "forge_token",
     "make_test_app",
     "make_test_keyring",
+    "token_response",
 ]
