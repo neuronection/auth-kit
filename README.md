@@ -167,6 +167,13 @@ Detailed docs live in [`docs/`](docs/README.md):
 - [oauth.md](docs/oauth.md) — provider-delegation OAuth: PKCE, bind-state law, refresh, custody
 - [testing.md](docs/testing.md) — the test kit, `CONTRACT_CASES`, drift gates
 
+## Contributing
+
+Contributions are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) for the
+development setup and verification gates, and
+[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) for community expectations. Security
+reports go through [SECURITY.md](SECURITY.md), never public issues.
+
 ## License
 
 Apache-2.0 — see [LICENSE](LICENSE).
