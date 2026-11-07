@@ -151,7 +151,10 @@ class KeyRing:
         fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, _KEY_FILE_MODE)
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as handle:
-                os.fchmod(handle.fileno(), _KEY_FILE_MODE)
+                # os.fchmod is POSIX-only (Windows raises AttributeError); the
+                # restrictive mode already came from os.open above.
+                if hasattr(os, "fchmod"):
+                    os.fchmod(handle.fileno(), _KEY_FILE_MODE)
                 handle.write(payload + "\n")
             os.replace(tmp, path)
         finally:

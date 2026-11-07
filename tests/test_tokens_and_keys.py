@@ -251,3 +251,13 @@ def test_from_file_leaves_a_0600_file_untouched(
     assert loaded == ring
     assert stat.S_IMODE(target.stat().st_mode) == 0o600
     assert caplog.records == []
+
+
+def test_keyring_save_works_without_fchmod(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Windows has no os.fchmod: the file must still save/load (mode 0600
+    comes from os.open on POSIX; Windows relies on the profile ACL)."""
+    monkeypatch.delattr(os, "fchmod", raising=False)
+    ring = KeyRing.generate()
+    path = tmp_path / "auth_keys.json"
+    ring.save_to_file(path)
+    assert KeyRing.from_file(path) == ring
