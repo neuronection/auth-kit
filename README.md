@@ -13,7 +13,7 @@ access modes** with a fail-closed default, Desktop Identity Mode
 single-flight refresh, sealed token custody), and the shared security
 test kit.
 
-[![Status](https://img.shields.io/badge/status-0.5.0-blue.svg)](CHANGELOG.md)
+[![Status](https://img.shields.io/badge/status-0.5.1-blue.svg)](CHANGELOG.md)
 [![License](https://img.shields.io/badge/license-Apache%202.0-green.svg)](LICENSE)
 
 ## Install
