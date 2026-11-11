@@ -14,11 +14,20 @@ REQUIRED_CLAIMS = ["iss", "sub", "token_kind", "auth_mode", "ver", "iat", "exp",
 
 
 class TokenKind(StrEnum):
+    """The family's closed token kinds (identity-auth §8).
+
+    ``PAT`` is the one **opaque** member: a personal access token is a
+    product-managed secret (prefix lookup + sha256 at rest), so the kit
+    never mints or verifies it as a JWT — it is declared here so the
+    closed list stays complete and a verifier cannot silently accept it.
+    """
+
     SESSION = "session"
     REFRESH = "refresh"
     API = "api"
     INVITE = "invite"
     DOWNLOAD = "download"
+    PAT = "pat"
 
 
 class AuthMode(StrEnum):
@@ -39,7 +48,7 @@ def _key_for(ring: KeyRing, kind: TokenKind) -> str:
         return ring.refresh_key
     raise TokenError(
         f"{kind.value} tokens are not signed by the kit core — pass an explicit key "
-        "(product-specific kinds: api/invite/download)"
+        "(product-specific kinds: api/invite/download; pat is opaque and never a JWT)"
     )
 
 

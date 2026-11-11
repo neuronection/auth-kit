@@ -79,6 +79,21 @@ def test_product_kinds_not_signed_by_core() -> None:
         _mint(TokenKind.API)
 
 
+def test_pat_is_declared_but_never_a_jwt() -> None:
+    """``pat`` is the opaque member: the kit neither mints nor verifies it."""
+    assert TokenKind.PAT.value == "pat"
+    with pytest.raises(TokenError, match="opaque and never a JWT"):
+        _mint(TokenKind.PAT)
+    with pytest.raises(TokenError):
+        verify_token(
+            make_test_keyring(),
+            CONFIG,
+            kind=TokenKind.PAT,
+            token="ha_pat_deadbeef_not-a-jwt",
+            key=make_test_keyring().session_key,
+        )
+
+
 def test_config_enforces_24h_access_cap_and_refresh_ordering() -> None:
     with pytest.raises(ValueError):
         AuthConfig(iss="x", access_ttl_minutes=24 * 60 + 1)

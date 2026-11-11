@@ -23,7 +23,7 @@ produces the standard claim set:
 |---|---|
 | `iss` | product slug (`AuthConfig.iss`) |
 | `sub` | user id (UUID string) |
-| `token_kind` | `session` \| `refresh` \| `local-boot` \| `demo` (`TokenKind`) |
+| `token_kind` | `session` \| `refresh` (`TokenKind`); `api`/`invite`/`download` are product-signed, `pat` is opaque and never a JWT |
 | `auth_mode` | the instance mode the token was minted under (`AuthMode`) |
 | `ver` | the user's `token_version` at mint time |
 | `iat` / `exp` | minted-at / expiry (TTLs from `AuthConfig`) |
@@ -32,6 +32,12 @@ produces the standard claim set:
 
 Products may add claims through `extra` (health: `tenant_id`, `scope`)
 — `extra` can never override a standard claim (`TokenError`).
+
+`pat` (health's scoped personal access token, ADR 0054 Phase 6) is a
+declared member with **no JWT semantics**: the product resolves it by an
+indexed lookup prefix plus a constant-time sha256 compare, and it can
+never be minted or verified through `mint_token`/`verify_token` (both
+reject it).
 
 `verify_token(ring, config, token, kind=…, auth_mode=…, …)` checks
 signature, kind, expiry, and instance-mode admissibility and returns the
