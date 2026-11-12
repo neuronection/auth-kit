@@ -10,8 +10,9 @@ access modes** with a fail-closed default, Desktop Identity Mode
 `nx_auth.atrest` Fernet cipher for **secrets at rest** (rotation ring,
 `_kid` fingerprints, per-row context binding), the `nx_auth.oauth`
 **provider-delegation OAuth** module (PKCE, principal-bound state,
-single-flight refresh, sealed token custody), and the shared security
-test kit.
+single-flight refresh, sealed token custody), the `nx_auth.secrets`
+**secret store + resolver** façade (probe-or-fail keyring → sealed file →
+env), and the shared security test kit.
 
 [![Status](https://img.shields.io/badge/status-0.5.1-blue.svg)](CHANGELOG.md)
 [![License](https://img.shields.io/badge/license-Apache%202.0-green.svg)](LICENSE)
@@ -113,6 +114,35 @@ custody over `nx_auth.atrest`. No network of its own — inject a
 `TokenTransport` (hosts wrap httpx). Public clients need no secret;
 confidential ones MAY pass one. See [docs/oauth.md](docs/oauth.md).
 
+## Secret store + resolver (opt-in, plan 60 D2)
+
+```python
+from nx_auth import secrets
+
+sealer = secrets.cipher(data_key=data_key, previous=previous_keys)   # injected keys
+
+secrets.set("github", token, service="StudyAssistant",
+            store_path=data_dir / "secrets.json", sealer=sealer)     # sealed before storage
+value = secrets.get("github", service="StudyAssistant",
+                    store_path=data_dir / "secrets.json", sealer=sealer)
+
+# server product: keyring when it round-trips, else the env fallback
+value = await secrets.get_async("tenant-a",
+                                service="health-assistant/tenant-sso",
+                                env_prefix="HA_SSO_CLIENT_SECRET",   # HA_SSO_CLIENT_SECRET_TENANT_A
+                                sealer=sealer)                       # None when missing
+```
+
+One façade for the store study owns and the resolver health asks: the
+backend is **probed before it is trusted** (`keyring.backends.null`
+accepts and silently discards writes), values are sealed **before** they
+reach the keyring or the `0600` sealed file, the environment is a
+read-only fallback that never shadows a stored value, and nothing
+writable fails closed with `SecretStoreUnavailable`. Key material is
+always injected — the kit never loads a key ring, writes
+`auth_keys.json` or touches a signing key. See
+[docs/secrets.md](docs/secrets.md).
+
 ## Scope
 
 - **In:** local auth (password), sessions, cookies/CSRF, instance
@@ -144,6 +174,7 @@ disagreement):
 | §7 rate limits + response headers (plan 21) | `ratelimit.py` (Counter/`RateLimitPolicy`/middleware), `headers.py` | [security.md](docs/security.md) |
 | §8 token claims & lifetimes | `tokens.py`, `keys.py` | [tokens-and-cookies.md](docs/tokens-and-cookies.md) |
 | §8 at-rest (`DATA_KEY` family) | `atrest.py` | [atrest.md](docs/atrest.md) |
+| §8/§17 secret slots — store + resolver (plan 60 D2) | `secrets.py` | [secrets.md](docs/secrets.md) |
 | §3/§12 provider-delegation OAuth (ADR-0052, plan 52) | `oauth.py` | [oauth.md](docs/oauth.md) |
 | §9 user-client (Bearer) class | `deps.py`, `enforcement.py` | [enforcement.md](docs/enforcement.md) |
 | §10 cookies, CSRF, WS | `cookies.py`, `enforcement.py` | [tokens-and-cookies.md](docs/tokens-and-cookies.md), [enforcement.md](docs/enforcement.md) |
@@ -165,6 +196,7 @@ Detailed docs live in [`docs/`](docs/README.md):
 - [desktop-mode.md](docs/desktop-mode.md) — DIM, shell gate, loopback rule
 - [security.md](docs/security.md) — passwords, lockout, rate limits, audit, threat model
 - [oauth.md](docs/oauth.md) — provider-delegation OAuth: PKCE, bind-state law, refresh, custody
+- [secrets.md](docs/secrets.md) — secret store + resolver: backends, precedence, sealed values, adoption
 - [testing.md](docs/testing.md) — the test kit, `CONTRACT_CASES`, drift gates
 
 ## Contributing

@@ -73,6 +73,9 @@ src/nx_auth/
 ├── principal.py        Principal (the only thing endpoints trust)
 ├── user_admin.py       /api/v1/me/* + /api/v1/admin/* (user management, §12)
 ├── atrest.py           DATA_KEY cipher: rotation ring, _kid, context binding
+├── secrets.py          secret store + resolver: probe-or-fail keyring →
+│                       sealed 0600 file → env, sealed-before-storage
+│                       values, injected SecretCipher, redaction
 ├── oauth.py            provider-delegation OAuth (plan 52 §13): PKCE S256,
 │                       principal-bound single-use state, code exchange,
 │                       single-flight refresh + rotation-crash safety,

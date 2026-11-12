@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`nx_auth.secrets` — the family secret store + resolver façade (plan
+  60 phase 1; ADR-0027/ADR-0028).** The module serves one *store* adopter
+  (study) and one *resolver* adopter (health) through one backend set;
+  products keep their slot grammars, service names, env prefixes and
+  value caps. Purely additive — no existing behavior, export or storage
+  format changes.
+  - **Surface:** `get` / `get_async` (resolver), `set` / `delete` /
+    `probe` / `backend_name` / `reset_caches` (store), `cipher` (wraps
+    `nx_auth.atrest.SecretCipher`, no fork) and `redact_secret` (the
+    family's one bounded, secret-free message helper). Typed errors:
+    `SecretNotFound`, `SecretUndecryptable`, `SecretStoreUnavailable`
+    (under `SecretError`).
+  - **Backends and precedence:** probed keyring → sealed `0600` file
+    (`store_path`, study's existing `secrets.json` shape) → env slot
+    (`<env_prefix>_<SLOT>`, health's frozen names). The keyring is
+    selected **only if a write round-trips** — `keyring.backends.null`,
+    read-only and locked backends are rejected (a null backend accepts
+    and silently discards writes); selection is memoized per process and
+    cleared by `reset_caches()`. The `keyring` package is optional at
+    runtime (lazy import; missing ⇒ `none`), and `backend_name()` reports
+    `keyring|file|none` — **never** `env`.
+  - **Values:** sealed **before** either backend (a keyring entry is
+    `enc::`), `sealer=None` plaintext only for pre-adoption read
+    tolerance, legacy plaintext returned verbatim, `enc::` decrypted
+    through the rotation ring (prior keys decrypt old envelopes),
+    `None` vs `SecretNotFound`/`SecretUndecryptable` by `required`, and
+    reads that fail on a locked backend fall through instead of raising.
+    Env never shadows a stored value; nothing writable ⇒
+    `SecretStoreUnavailable` (a failed write raises — no silent success,
+    no silent backend switch).
+  - **Key material is injected**, never resolved or generated: no
+    `KeyRing.load_for`, no `auth_keys.json` write, no signing-key touch.
+    Tests pin the security invariants (probe rejection, sealed-before-
+    storage, env precedence, `0600`, prior-key decrypt, redaction, no
+    plaintext in logs/errors, no key file written) and the deployed
+    service/env names. Docs: [docs/secrets.md](docs/secrets.md).
+
 ## [0.5.0] - 2026-11-03
 
 ### Added

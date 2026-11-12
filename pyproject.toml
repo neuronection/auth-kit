@@ -38,6 +38,11 @@ dev = [
     "httpx>=0.27",
     "ruff>=0.6",
     "mypy>=1.10",
+    # Tests only: the keyring package is OPTIONAL at runtime (lazy import;
+    # a host without it resolves keyring→none and keeps the sealed-file or
+    # env path). The suite fakes it everywhere except one case that proves
+    # the real `keyring.backends.null` is rejected by the probe.
+    "keyring>=25",
 ]
 # plan 21 D2: the multi-process counter backend (uvicorn workers + Celery
 # sharing one Redis). Optional — the in-memory counter is the default and
