@@ -11,9 +11,11 @@ reports ``env``, no plaintext in a log line or an exception, and no key
 material is resolved, generated or written here.
 
 No test touches a real keyring: backends are in-memory doubles installed
-in ``sys.modules``, except the one case that proves the real
-``keyring.backends.null`` is rejected — it is configured with the null
-backend, which stores nothing anywhere.
+in ``sys.modules``. That includes the proof that a discarding/null backend
+is rejected — it runs with no ``keyring`` package installed at all. The
+case that additionally exercises the real ``keyring.backends.null`` only
+supplements that proof, and it saves and restores the process-global
+keyring backend.
 """
 
 from __future__ import annotations
@@ -29,6 +31,7 @@ import threading
 from collections.abc import Iterator
 from pathlib import Path
 from types import ModuleType
+from typing import Any, Protocol
 
 import pytest
 
@@ -51,6 +54,52 @@ SECRET = "s3cr3t-value-do-not-log-42"
 
 class PasswordDeleteError(Exception):
     """Stand-in for ``keyring.errors.PasswordDeleteError``."""
+
+
+class _KeyringDouble(Protocol):
+    """The module-level keyring API a double has to expose."""
+
+    def get_password(self, service_name: str, username: str) -> str | None: ...
+
+    def set_password(self, service_name: str, username: str, password: str) -> None: ...
+
+    def delete_password(self, service_name: str, username: str) -> None: ...
+
+
+def _install_keyring(monkeypatch: pytest.MonkeyPatch, backend: _KeyringDouble) -> ModuleType:
+    """Install ``backend`` as the ``keyring`` package — no real install needed."""
+    module = ModuleType("keyring")
+    errors = ModuleType("keyring.errors")
+    vars(errors).update({"PasswordDeleteError": PasswordDeleteError})
+    vars(module).update(
+        {
+            "errors": errors,
+            "get_password": backend.get_password,
+            "set_password": backend.set_password,
+            "delete_password": backend.delete_password,
+        }
+    )
+    monkeypatch.setitem(sys.modules, "keyring", module)
+    monkeypatch.setitem(sys.modules, "keyring.errors", errors)
+    return module
+
+
+class _NullKeyring:
+    """``keyring.backends.null``: every write is accepted and discarded."""
+
+    writes: int
+
+    def __init__(self) -> None:
+        self.writes = 0
+
+    def get_password(self, service_name: str, username: str) -> str | None:
+        return None
+
+    def set_password(self, service_name: str, username: str, password: str) -> None:
+        self.writes += 1
+
+    def delete_password(self, service_name: str, username: str) -> None:
+        raise PasswordDeleteError("no such password")
 
 
 class _MemKeyring:
@@ -91,19 +140,8 @@ class _MemKeyring:
         del self.data[(service_name, username)]
 
     def install(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        module = ModuleType("keyring")
-        errors = ModuleType("keyring.errors")
-        vars(errors).update({"PasswordDeleteError": PasswordDeleteError})
-        vars(module).update(
-            {
-                "errors": errors,
-                "get_password": self.get_password,
-                "set_password": self.set_password,
-                "delete_password": self.delete_password,
-            }
-        )
-        monkeypatch.setitem(sys.modules, "keyring", module)
-        monkeypatch.setitem(sys.modules, "keyring.errors", errors)
+        _install_keyring(monkeypatch, self)
+
 
 @pytest.fixture(autouse=True)
 def _no_keyring(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
@@ -112,6 +150,19 @@ def _no_keyring(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     secrets.reset_caches()
     yield
     secrets.reset_caches()
+
+
+@pytest.fixture
+def real_keyring_backend(monkeypatch: pytest.MonkeyPatch) -> Iterator[Any]:
+    """The real package, with its process-global backend saved and restored."""
+    monkeypatch.delitem(sys.modules, "keyring", raising=False)
+    keyring = pytest.importorskip("keyring")
+    previous = keyring.get_keyring()
+    try:
+        yield keyring
+    finally:
+        keyring.set_keyring(previous)
+        secrets.reset_caches()
 
 
 def _sealer(key: str = PRIMARY, previous: list[str] | None = None) -> SecretCipher:
@@ -246,11 +297,32 @@ def test_selection_is_per_service(monkeypatch: pytest.MonkeyPatch) -> None:
     assert keyring.services == {HEALTH_SEED_SERVICE, HEALTH_SSO_SERVICE}
 
 
-def test_real_keyring_null_backend_is_rejected(
+def test_fake_null_keyring_is_rejected_without_the_keyring_package(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    monkeypatch.delitem(sys.modules, "keyring", raising=False)
-    keyring = pytest.importorskip("keyring")
+    """The unconditional proof: a null backend is rejected on a bare install.
+
+    Nothing here needs the optional ``keyring`` package — the module and
+    its backend are replaced — so this case cannot be skipped away while
+    the real-``keyring.backends.null`` case below is.
+    """
+    null = _NullKeyring()
+    module = _install_keyring(monkeypatch, null)
+    assert sys.modules["keyring"] is module
+
+    assert secrets.backend_name(service=STUDY_SERVICE) == "none"
+    with pytest.raises(secrets.SecretStoreUnavailable):
+        secrets.set("demo", SECRET, service=STUDY_SERVICE)
+    assert null.writes >= 1
+
+    store_path = tmp_path / "secrets.json"
+    assert secrets.backend_name(service=STUDY_SERVICE, store_path=store_path) == "file"
+
+
+def test_real_keyring_null_backend_is_rejected(
+    real_keyring_backend: Any, tmp_path: Path
+) -> None:
+    keyring = real_keyring_backend
     null = pytest.importorskip("keyring.backends.null")
 
     keyring.set_keyring(null.Keyring())
