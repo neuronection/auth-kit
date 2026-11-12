@@ -23,7 +23,7 @@ from nx_auth.keys import KeyRing
 from nx_auth.principal import Principal
 from nx_auth.tokens import AuthMode, TokenError, TokenKind, mint_token, verify_token
 
-__version__ = "0.5.1"
+__version__ = "0.6.0"
 
 __all__ = [
     "AUTH_KNOB_ENV_NAMES",
