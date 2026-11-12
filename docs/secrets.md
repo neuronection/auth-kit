@@ -17,7 +17,7 @@ probe.
 | `get(slot, *, service, env_prefix=None, store_path=None, required=False, sealer=None) -> str \| None` | Resolve a slot (resolver surface) |
 | `await get_async(...)` | `get` on a worker thread — same parameters, same contract |
 | `set(slot, value, *, service, env_prefix=None, store_path=None, sealer=None)` | Store a value, sealed when a sealer is given |
-| `delete(slot, *, service, env_prefix=None, store_path=None, sealer=None)` | Remove a slot from the writable backend |
+| `delete(slot, *, service, env_prefix=None, store_path=None, sealer=None)` | Remove a slot from the selected backend and the sealed file |
 | `probe(*, service, env_prefix=None, store_path=None, sealer=None)` | Round-trip the writable backend, or raise |
 | `backend_name(*, service, env_prefix=None, store_path=None) -> str` | `keyring` \| `file` \| `none` — never `env` |
 | `reset_caches()` | Forget the selected backend(s); the next call re-probes |
@@ -107,8 +107,13 @@ the ring, so an envelope sealed before a rotation still opens.
 - Nothing writable ⇒ `set`/`delete`/`probe` raise `SecretStoreUnavailable`;
   a write that fails after a passing probe raises the same — no silent
   success and no silent backend switch. `delete` clears the slot from the
-  selected backend **and** the sealed file, so a revocation cannot leave
-  the value resolvable through the other source.
+  **selected** backend **and** the sealed file (`store_path`) — and from
+  nothing else, so a revocation cannot leave the value resolvable through
+  the other source. The environment is not deletable (`env_prefix` is
+  accepted and ignored), and a keyring that failed its probe was never
+  selected: a value already sitting in it is not cleared by `delete` and
+  stays in the OS store until it is removed with the keyring's own
+  tooling (and the credential is rotated).
 - `required=True` turns "missing" into `SecretNotFound` and "cannot open"
   into `SecretUndecryptable`. `required=False` answers `None` for both.
 
@@ -164,7 +169,10 @@ fail-closed: `None` (or `SecretNotFound`) means the caller raises
 **Deployment.** `keyring` is a **dev/test extra**, not a runtime
 dependency: production hosts may not have it (health's Docker is
 env-only). A host that wants the keyring backend installs the package
-and lets the probe decide.
+and lets the probe decide. `uv.lock` is not authoritative for CI — the
+gate installs `pip install -e ".[dev]"` and resolves the `keyring`
+dev/test extra there, so a lock that predates the extra changes nothing
+about what CI runs.
 
 **Rollback.** The module is additive — remove it; no product changed in
 the phase that introduced it.
