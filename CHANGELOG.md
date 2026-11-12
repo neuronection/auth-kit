@@ -46,6 +46,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     plaintext in logs/errors, no key file written) and the deployed
     service/env names. Docs: [docs/secrets.md](docs/secrets.md).
 
+- **`nx_auth.opaque` — the family opaque credential core (plan 60 D3;
+  contract §8).** One implementation for the three products that hand-roll
+  opaque tokens (health PATs, career feed tokens, study capture tokens).
+  Purely additive — no existing export, token format or behavior changes.
+  - **Surface:** `mint(*, brand=None, prefix_bytes=6)` →
+    `(plaintext, prefix | None, sha256_hash)`; `parse(bearer, *, brand=None,
+    prefix_bytes=6)` → `(prefix | None, sha256_hash) | None`;
+    `verify(stored_hash, presented_hash) -> bool`.
+  - **Two shapes:** branded — `brand="ha_pat"` reproduces health's
+    `ha_pat_<12 lowercase hex>_<token_urlsafe(32)>` with the generated
+    12-hex **lookup prefix** returned separately for the prefix column;
+    brandless — bare `token_urlsafe(32)` with `prefix=None`, for career and
+    study (whose digest-only resolvers keep no prefix column and no dual
+    lookup). The digest is SHA-256 over the **full** plaintext.
+  - **Strict `parse`:** exact brand, exact `2 * prefix_bytes` lowercase-hex
+    prefix, `_`, non-empty URL-safe secret; anything else is `None` — it
+    never accepts an arbitrary non-empty prefix (health's pre-adoption
+    `token_prefix_of` did, so malformed bearers no longer record a junk
+    prefix). It is format-only: no liveness, scope, tenant or length
+    policy, and no storage.
+  - **`verify`** is `hmac.compare_digest` over digests only — never a
+    plaintext compare, never `==`; two empty digests do not match. No key
+    material is used or resolved (a plain SHA-256 digest needs none), and
+    the module imports only `hashlib`, `hmac` and `secrets`.
+  - Tests pin the golden format (health), the brandless format, prefix
+    width/hex, valid and malformed parses, digest stability, uniqueness
+    over hundreds of mints, the rotation hand-off, constant-time verify
+    (a patched `compare_digest` proves delegation), no credential material
+    in errors, and the import surface. Docs:
+    [docs/opaque-credentials.md](docs/opaque-credentials.md).
+
 ## [0.5.0] - 2026-11-03
 
 ### Added

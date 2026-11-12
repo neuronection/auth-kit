@@ -12,7 +12,9 @@ access modes** with a fail-closed default, Desktop Identity Mode
 **provider-delegation OAuth** module (PKCE, principal-bound state,
 single-flight refresh, sealed token custody), the `nx_auth.secrets`
 **secret store + resolver** façade (probe-or-fail keyring → sealed file →
-env), and the shared security test kit.
+env), the `nx_auth.opaque` **opaque credential core** (branded/prefix or
+bare tokens, SHA-256 at rest, constant-time compare), and the shared
+security test kit.
 
 [![Status](https://img.shields.io/badge/status-0.5.1-blue.svg)](CHANGELOG.md)
 [![License](https://img.shields.io/badge/license-Apache%202.0-green.svg)](LICENSE)
@@ -143,10 +145,41 @@ always injected — the kit never loads a key ring, writes
 `auth_keys.json` or touches a signing key. See
 [docs/secrets.md](docs/secrets.md).
 
+## Opaque credentials (opt-in, plan 60 D3)
+
+```python
+from nx_auth.opaque import mint, parse, verify
+
+plaintext, prefix, digest = mint(brand="ha_pat")   # ha_pat_<12 hex>_<urlsafe32>
+plaintext, prefix, digest = mint()                  # token_urlsafe(32); prefix is None
+
+parsed = parse(presented, brand="ha_pat")           # (prefix, digest) | None
+if parsed is None or not verify(row.token_hash, parsed[1]):
+    raise PermissionError
+
+plaintext, _, digest = mint()                       # digest-only products
+row = session.scalar(select(Token).where(Token.token_hash == digest))
+```
+
+Personal access tokens, feed tokens and capture tokens are **not** JWTs:
+they are CSPRNG secrets whose only stored form is a SHA-256 digest. Health
+adds a 12-hex lookup prefix (`brand="ha_pat"`, `prefix_bytes=6`); career
+and study mint bare `token_urlsafe(32)` values with no prefix column.
+`parse` is format-only and strict (exact brand, exact lowercase-hex
+prefix width, non-empty URL-safe secret), `verify` is
+`hmac.compare_digest` over digests — never plaintext, never `==`.
+
+The kit owns the byte format, the digest and the constant-time compare.
+The product keeps its table, prefix column, tenant/role/permission scope,
+audit, revocation and refusal matrix; there is no storage, policy or key
+material here. See
+[docs/opaque-credentials.md](docs/opaque-credentials.md).
+
 ## Scope
 
 - **In:** local auth (password), sessions, cookies/CSRF, instance
-  modes, DIM, audit hook, tenants interface, test kit.
+  modes, DIM, audit hook, tenants interface, opaque credential core,
+  test kit.
 - **Out (demand-gated):** OIDC delegation, passkeys, TOTP — extension
   points reserved, no contract change needed when they land.
 - Stores are **synchronous** (SQLAlchemy sync sessions; FastAPI runs
@@ -174,6 +207,7 @@ disagreement):
 | §7 rate limits + response headers (plan 21) | `ratelimit.py` (Counter/`RateLimitPolicy`/middleware), `headers.py` | [security.md](docs/security.md) |
 | §8 token claims & lifetimes | `tokens.py`, `keys.py` | [tokens-and-cookies.md](docs/tokens-and-cookies.md) |
 | §8 at-rest (`DATA_KEY` family) | `atrest.py` | [atrest.md](docs/atrest.md) |
+| §8 opaque credentials — PAT/feed/capture, hash at rest (plan 60 D3) | `opaque.py` | [opaque-credentials.md](docs/opaque-credentials.md) |
 | §8/§17 secret slots — store + resolver (plan 60 D2) | `secrets.py` | [secrets.md](docs/secrets.md) |
 | §3/§12 provider-delegation OAuth (ADR-0052, plan 52) | `oauth.py` | [oauth.md](docs/oauth.md) |
 | §9 user-client (Bearer) class | `deps.py`, `enforcement.py` | [enforcement.md](docs/enforcement.md) |
@@ -197,6 +231,7 @@ Detailed docs live in [`docs/`](docs/README.md):
 - [security.md](docs/security.md) — passwords, lockout, rate limits, audit, threat model
 - [oauth.md](docs/oauth.md) — provider-delegation OAuth: PKCE, bind-state law, refresh, custody
 - [secrets.md](docs/secrets.md) — secret store + resolver: backends, precedence, sealed values, adoption
+- [opaque-credentials.md](docs/opaque-credentials.md) — opaque credentials: format, prefix, hash at rest, parse strictness
 - [testing.md](docs/testing.md) — the test kit, `CONTRACT_CASES`, drift gates
 
 ## Contributing

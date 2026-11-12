@@ -18,6 +18,7 @@ consumed by every product backend.
 | [security.md](security.md) | Password policy, lockout, rate limits, audit stream, threat-model notes and the known gap list |
 | [oauth.md](oauth.md) | Provider-delegation OAuth (plan 52 §13): PKCE S256, the single-use principal-bound bind-state law, single-flight refresh with rotation-crash safety, sealed token custody over `nx_auth.atrest`, the typed error vocabulary, and how a host plugs its own transport/state store/vault |
 | [secrets.md](secrets.md) | Secret store + resolver (plan 60 D2): probe-or-fail backend selection, keyring → sealed `0600` file → env precedence, sealed-before-storage values, injected key material, the typed errors, redaction, and the study/health adoption notes |
+| [opaque-credentials.md](opaque-credentials.md) | Opaque credential core (plan 60 D3): the branded `ha_pat_<12 hex>_<urlsafe32>` and brandless `token_urlsafe(32)` formats, the lookup prefix, SHA-256 at rest, strict parsing, constant-time verify, and the product/kit boundary |
 | [testing.md](testing.md) | The shared security test kit: `make_test_app`, `CONTRACT_CASES`, token forging, cookie assertions, consumer drift gates |
 
 ## The contract in one paragraph

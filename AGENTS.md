@@ -8,7 +8,9 @@ cookie sessions + double-submit CSRF, **DB-authoritative instance access
 modes** (open / authenticated, fail-closed), Desktop Identity Mode
 exchange, an audit hook, a tenants *interface* (products keep their own
 implementations), the `nx_auth.atrest` Fernet cipher for secrets at
-rest, and the shared security test kit (`CONTRACT_CASES`).
+rest, the `nx_auth.opaque` opaque credential core (brand + lookup prefix,
+SHA-256 at rest, constant-time compare), and the shared security test kit
+(`CONTRACT_CASES`).
 
 Normative sources: the family identity contract (§8 tokens, §10 cookies,
 §12 API surface, §18 test kit — README's contract map links each cited
@@ -73,6 +75,8 @@ src/nx_auth/
 ├── principal.py        Principal (the only thing endpoints trust)
 ├── user_admin.py       /api/v1/me/* + /api/v1/admin/* (user management, §12)
 ├── atrest.py           DATA_KEY cipher: rotation ring, _kid, context binding
+├── opaque.py           opaque credential core: mint/parse/verify, brand +
+│                       lookup prefix, sha256 at rest, constant-time compare
 ├── secrets.py          secret store + resolver: probe-or-fail keyring →
 │                       sealed 0600 file → env, sealed-before-storage
 │                       values, injected SecretCipher, redaction
