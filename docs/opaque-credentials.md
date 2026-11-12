@@ -28,7 +28,11 @@ ha_pat_<12 lowercase hex>_<token_urlsafe(32)>
 ```
 
 - The brand carries **no trailing underscore**; the kit inserts the
-  separators: `f"{brand}_{prefix}_{secret}"`.
+  separators: `f"{brand}_{prefix}_{secret}"`. `mint` and `parse` reject a
+  brand ending in `_` with `ValueError`: health's `PAT_TOKEN_PREFIX`
+  constant includes its separator (`"ha_pat_"`), and passing it unchanged
+  would mint `ha_pat__<prefix>_<secret>` — unparseable under the real
+  brand. Pass the label (`"ha_pat"`), not the prefix constant.
 - The prefix is `secrets.token_hex(6)` — 6 CSPRNG bytes, 12 lowercase hex
   characters — returned **separately** so the product stores it in its
   indexed prefix column.
@@ -90,7 +94,9 @@ bearer could be recorded with a junk prefix. With `parse` such a bearer is
 rejected before any audit record or query.
 
 Without a brand, any non-blank value answers `(None, digest)` and blank
-values answer `None`. The digest is computed over the value exactly as
+values answer `None`. A non-`str` value (`None`, bytes, a header object)
+also answers `None`: `parse` is total over untrusted input and never
+raises `AttributeError`. The digest is computed over the value exactly as
 presented — callers trim transport whitespace first, and a padded value
 simply never matches a stored digest.
 
@@ -103,8 +109,11 @@ the product applies its own policy after the lookup.
 `verify(stored_hash, presented_hash)` is `hmac.compare_digest` over the two
 digests: constant-time, never a plaintext comparison, never `==`. An empty
 digest on either side answers `False`, so a missing stored hash cannot
-match a missing presented one. It compares what it is handed — callers pass
-the digest from `parse`, not a credential.
+match a missing presented one. A comparison `hmac.compare_digest` cannot
+perform — non-ASCII text, bytes against text — also answers `False`:
+`verify` is total and fail-closed, never raising out of the auth path. It
+compares what it is handed — callers pass the digest from `parse`, not a
+credential.
 
 ## What the product keeps
 
@@ -130,10 +139,23 @@ key, and this module never loads a key ring or touches a signing key.
 **health (branded adopter).** `mint(brand="ha_pat")` reproduces
 `ha_pat_<12 hex>_<token_urlsafe(32)>` exactly; keep the prefix column.
 Replace the local `generate_token`/`hash_token`/`token_prefix_of` with
-`mint`/`parse`/`verify`. `parse(value, brand="ha_pat")` replaces both the
-lookup-segment extraction and the digest, so `resolve_principal` keeps one
-prefix query and one constant-time compare. Behavior delta to record:
-malformed bearers no longer yield an arbitrary prefix (see above).
+`mint`/`parse`/`verify`. **Keep the existing `.strip()`** of the incoming
+bearer and pass the **stripped** value to `parse` —
+`parse(value.strip(), brand="ha_pat")` — because the digest is computed
+over exactly what `parse` receives; parsing the raw padded header would
+never match a stored digest. The brand argument is the bare `"ha_pat"`
+label, not health's `PAT_TOKEN_PREFIX == "ha_pat_"`: the latter ends in
+`_` and is rejected with `ValueError` (it would mint
+`ha_pat__<prefix>_<secret>`). `parse` replaces both the lookup-segment
+extraction and the digest, so `resolve_principal` keeps one prefix query
+and one constant-time compare.
+
+Behavior delta to record for the **security team**: malformed bearers no
+longer yield an arbitrary prefix. The `api_token.denied` audit row's
+`token_prefix` is now **`null`** for such a bearer (health previously
+stored whatever sat between the first two underscores), so audit queries,
+dashboards and any non-null assumption on `token_prefix` must tolerate
+`null`; no lookup or audit record ever carries a junk prefix.
 
 **career / study (brandless adopters).** `mint()` + `verify()`/digest
 equality reproduce `token_urlsafe(32)` + `sha256` with no schema change,
@@ -151,7 +173,10 @@ plan** — not part of the opaque core, and not implied by adopting it.
 2. The stored form is a SHA-256 digest of the full plaintext; no plaintext
    is stored, logged, returned by `parse`, or included in an exception.
 3. `verify` delegates to `hmac.compare_digest` and is never a plaintext
-   comparison or `==`; two empty digests are not a match.
+   comparison or `==`; two empty digests are not a match, and a comparison
+   that raises (non-ASCII text, mismatched types) is a `False`. Both
+   `parse` and `verify` are total: they answer `None`/`False` instead of
+   raising on malformed input.
 4. A branded `parse` accepts only the exact generated shape — exact width,
    lowercase hex, URL-safe non-empty secret — so no arbitrary prefix
    reaches a lookup or an audit record.

@@ -122,7 +122,10 @@ def test_secret_segment_entropy_and_uniqueness() -> None:
 
     assert len(seen_plaintexts) == 500
     assert len(seen_hashes) == 500
-    assert len(seen_prefixes) == 500
+    # A prefix is only 48 bits: a collision is expected by design (the digest
+    # compare resolves it), so this bounds the count instead of requiring
+    # every prefix to be distinct.
+    assert len(seen_prefixes) >= 495
 
 
 def test_brandless_mints_are_unique() -> None:
@@ -141,6 +144,21 @@ def test_mint_rejects_arguments_that_cannot_parse() -> None:
         opaque.parse("whatever", brand="")
     with pytest.raises(ValueError):
         opaque.parse("whatever", prefix_bytes=0)
+
+
+@pytest.mark.parametrize("brand", ["ha_pat_", "_", "career_token__"])
+def test_trailing_underscore_brand_is_rejected(brand: str) -> None:
+    """The kit inserts the separators: a trailing ``_`` mints ``brand__``."""
+    with pytest.raises(ValueError):
+        opaque.mint(brand=brand)
+    with pytest.raises(ValueError):
+        opaque.parse("whatever", brand=brand)
+
+
+def test_trailing_underscore_brand_error_carries_no_credential_material() -> None:
+    with pytest.raises(ValueError) as error:
+        opaque.mint(brand="ha_pat_")
+    assert "ha_pat" not in str(error.value)
 
 
 # --- parse: strict, format-only ------------------------------------------
@@ -175,6 +193,22 @@ def test_parse_brandless_does_not_trim() -> None:
 def test_parse_rejects_blank(blank: str) -> None:
     assert opaque.parse(blank) is None
     assert opaque.parse(blank, brand=HEALTH_BRAND) is None
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        pytest.param(None, id="none"),
+        pytest.param(b"", id="empty-bytes"),
+        pytest.param(b"ha_pat_0123456789ab_" + b"A" * 43, id="branded-bytes"),
+        pytest.param(bytearray(b"A" * 43), id="bytearray"),
+        pytest.param(123, id="int"),
+        pytest.param(object(), id="object"),
+    ],
+)
+def test_parse_rejects_non_str_without_raising(value: object) -> None:
+    assert opaque.parse(value) is None  # type: ignore[arg-type]
+    assert opaque.parse(value, brand=HEALTH_BRAND) is None  # type: ignore[arg-type]
 
 
 INVALID_BRANDED = [
@@ -301,6 +335,30 @@ def test_verify_rejects_empty_presented(presented: str) -> None:
 
 def test_verify_rejects_two_empty_digests() -> None:
     assert opaque.verify("", "") is False
+
+
+@pytest.mark.parametrize("presented", ["é", "pässwort", "🔑" + "A" * 40])
+def test_verify_rejects_non_ascii_without_raising(presented: str) -> None:
+    """``hmac.compare_digest`` raises on non-ASCII; the contract is bool."""
+    digest = opaque.mint()[2]
+
+    assert opaque.verify(digest, presented) is False
+
+
+def test_verify_rejects_non_ascii_on_both_sides() -> None:
+    assert opaque.verify("é", "é") is False
+
+
+def test_verify_fails_closed_when_compare_digest_raises(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def boom(stored: str, presented: str) -> bool:
+        raise TypeError("cannot compare")
+
+    monkeypatch.setattr(hmac, "compare_digest", boom)
+
+    digest = opaque.mint()[2]
+    assert opaque.verify(digest, digest) is False
 
 
 def test_verify_never_matches_a_plaintext_against_a_digest() -> None:

@@ -77,6 +77,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     in errors, and the import surface. Docs:
     [docs/opaque-credentials.md](docs/opaque-credentials.md).
 
+### Fixed
+
+- **`nx_auth.opaque` now fails closed on malformed input.** Two evaluator
+  findings on the new core, no format or storage change:
+  - `verify` returns `False` instead of raising `TypeError` when
+    `hmac.compare_digest` cannot compare its arguments (non-ASCII text,
+    bytes against text, a non-string value). The contract is `-> bool` and
+    a malformed bearer must never escape the auth path as an exception.
+  - `parse` answers `None` for a non-`str` value (`None`, bytes, a header
+    object) instead of raising `AttributeError`; blank values still answer
+    `None`. Parsing is total over untrusted input.
+  - `mint` and `parse` reject a brand ending in `_` with `ValueError`:
+    the kit inserts the separators, so health's `PAT_TOKEN_PREFIX`
+    (`"ha_pat_"`) passed as the brand would mint `ha_pat__<prefix>_…`,
+    unparseable under the real `"ha_pat"` label. Pass the bare label.
+  - Docs record the health adoption delta for the security team: keep the
+    existing `.strip()` and pass the **stripped** value to `parse`, and
+    note that a malformed bearer now audits `token_prefix: null` instead
+    of a junk segment.
+  - The secret width is now private (`_SECRET_BYTES`), and the uniqueness
+    test tolerates a lookup-prefix collision (48-bit space) instead of
+    requiring 500 distinct prefixes.
+
 ## [0.5.0] - 2026-11-03
 
 ### Added

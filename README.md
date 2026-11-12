@@ -166,8 +166,10 @@ they are CSPRNG secrets whose only stored form is a SHA-256 digest. Health
 adds a 12-hex lookup prefix (`brand="ha_pat"`, `prefix_bytes=6`); career
 and study mint bare `token_urlsafe(32)` values with no prefix column.
 `parse` is format-only and strict (exact brand, exact lowercase-hex
-prefix width, non-empty URL-safe secret), `verify` is
-`hmac.compare_digest` over digests — never plaintext, never `==`.
+prefix width, non-empty URL-safe secret), answers `None` for a non-string
+or blank value, and `verify` is `hmac.compare_digest` over digests —
+never plaintext, never `==`, with any comparison error a `False`. A brand
+ending in `_` is rejected (the kit inserts the separators).
 
 The kit owns the byte format, the digest and the constant-time compare.
 The product keeps its table, prefix column, tenant/role/permission scope,

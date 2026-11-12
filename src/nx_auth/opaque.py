@@ -49,7 +49,7 @@ _URLSAFE = frozenset(
 # The generated prefix segment is lowercase hex, never uppercase.
 _LOWER_HEX = frozenset("0123456789abcdef")
 
-SECRET_BYTES = 32
+_SECRET_BYTES = 32
 """Entropy of the secret segment in bytes (``token_urlsafe`` input)."""
 
 
@@ -62,8 +62,12 @@ def _check_arguments(brand: str | None, prefix_bytes: int) -> None:
     """Reject arguments that cannot express a parseable credential."""
     if not isinstance(prefix_bytes, int) or prefix_bytes < 1:
         raise ValueError("prefix_bytes must be a positive integer")
-    if brand is not None and not brand:
+    if brand is None:
+        return
+    if not brand:
         raise ValueError("brand must be a non-empty label or None")
+    if brand.endswith("_"):
+        raise ValueError("brand must not end with '_': mint inserts the separators")
 
 
 def mint(
@@ -89,11 +93,12 @@ def mint(
         afterwards.
 
     Raises:
-        ValueError: If ``prefix_bytes`` is not a positive integer or
-            ``brand`` is an empty string.
+        ValueError: If ``prefix_bytes`` is not a positive integer, ``brand``
+            is an empty string, or ``brand`` ends with ``_`` (the trailing
+            separator is inserted by this function).
     """
     _check_arguments(brand, prefix_bytes)
-    secret = secrets.token_urlsafe(SECRET_BYTES)
+    secret = secrets.token_urlsafe(_SECRET_BYTES)
     if brand is None:
         plaintext = secret
         return plaintext, None, _digest(plaintext)
@@ -124,6 +129,10 @@ def parse(
     as presented (callers trim transport whitespace first), so it only
     ever matches a hash minted from the identical string.
 
+    A non-``str`` value (``None``, bytes, a header object) answers
+    ``None``: parsing is total over untrusted input and never raises
+    ``AttributeError``.
+
     Args:
         bearer: The presented credential (a bearer value).
         brand: The product's label; ``None`` for a bare credential.
@@ -135,13 +144,13 @@ def parse(
         this module in this shape.
 
     Raises:
-        ValueError: If ``prefix_bytes`` is not a positive integer or
-            ``brand`` is an empty string.
+        ValueError: If ``prefix_bytes`` is not a positive integer, ``brand``
+            is an empty string, or ``brand`` ends with ``_``.
     """
     _check_arguments(brand, prefix_bytes)
+    if not isinstance(bearer, str) or not bearer.strip():
+        return None
     if brand is None:
-        if not bearer.strip():
-            return None
         return None, _digest(bearer)
     stem = f"{brand}_"
     if not bearer.startswith(stem):
@@ -162,7 +171,9 @@ def verify(stored_hash: str, presented_hash: str) -> bool:
     Both arguments are digests (from the product's column and from
     :func:`parse`) — never plaintext. An empty digest on either side
     answers ``False``: a missing stored hash must not match a missing
-    presented one.
+    presented one. A comparison that cannot be performed (non-ASCII text,
+    bytes against text, a non-string value) also answers ``False``: the
+    contract is ``bool`` and a malformed bearer must fail closed.
 
     Args:
         stored_hash: The digest loaded from the product's storage.
@@ -173,4 +184,9 @@ def verify(stored_hash: str, presented_hash: str) -> bool:
     """
     if not stored_hash or not presented_hash:
         return False
-    return hmac.compare_digest(stored_hash, presented_hash)
+    try:
+        return hmac.compare_digest(stored_hash, presented_hash)
+    except Exception:
+        # compare_digest raises TypeError for non-ASCII text and mismatched
+        # types; any comparison failure is a non-match, never an exception.
+        return False
