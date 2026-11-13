@@ -3,8 +3,8 @@
 The family's **opaque** credentials — personal access tokens, feed tokens,
 capture tokens — are not JWTs. They are high-entropy random secrets whose
 only persisted form is a SHA-256 digest, optionally with a short **lookup
-prefix** so a verifier can find the row before comparing digests (plan 60
-D3, contract §8; the `pat` token kind is already law).
+prefix** so a verifier can find the row before comparing digests
+(contract §8; the `pat` token kind is already law).
 
 Three products hand-roll this today; `nx_auth.opaque` is the one
 implementation. It owns the **byte format, the digest and the constant-time

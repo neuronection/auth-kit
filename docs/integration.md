@@ -136,7 +136,7 @@ process-environment ones (contract case §18.14).
 
 `KeyRing` holds the per-kind HMAC keys (see
 [tokens-and-cookies.md](tokens-and-cookies.md)). Family standard
-resolution (ADR-0028): `KeyRing.load_for(product, config_dir)` — env
+resolution: `KeyRing.load_for(product, config_dir)` — env
 pins (`<PREFIX>_SESSION_KEY` / `<PREFIX>_REFRESH_KEY` /
 `<PREFIX>_DATA_KEY`, all three or none) > 0600 `auth_keys.json` in the
 config dir > generated on first run. **In containers, pin the three keys
@@ -171,7 +171,7 @@ migrations. Kit ORM classes must not be added to a product's
 `instance_settings` is written **only when the table is empty** — via
 `nx_auth.instance.initialize_instance(store, *, identity_mode,
 auth_mode_env, demo_mode_env, product=…)`, the single family
-implementation of the §4 init rules (ADR-0028): the env value is used
+implementation of the §4 init rules: the env value is used
 when legal (`open` is refused on a server entrypoint and becomes
 `authenticated` with a loud warning; unknown values fail closed to
 `authenticated`), else the §4 default (`open` on desktop,
@@ -184,7 +184,7 @@ kit does not expose mode changes on the auth router.
 ## Boot guards
 
 `nx_auth.boot.validate_boot_config(...)` is the family fail-soft-in-dev
-/ abort-in-prod check (ADR-0028): three-or-none key pins, weak-key
+/ abort-in-prod check: three-or-none key pins, weak-key
 refusal (kit blocklist + a `weak_secrets=` hook for product fixtures),
 Fernet-material `DATA_KEY` checks, and `DEBUG`/`DEMO_MODE` refusing
 production boot. Call it from your lifespan when `APP_ENV=production`;

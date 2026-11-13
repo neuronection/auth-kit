@@ -1,8 +1,7 @@
 # Provider-delegation OAuth (`nx_auth.oauth`)
 
 One implementation of delegated-provider OAuth for every Python family
-host — study, health, career (plan 52 §13; ADR-0052 §3 + §12; the
-posture is ADR-0042 §2/§3/§6 generalized to class D/S). Authorization
+host — study, health, career. Authorization
 code + **PKCE S256** only: bind a provider account the user delegated,
 never an app login. The module is **opt-in**, **stdlib-only**, and
 performs **no I/O on its own** — network, state persistence, and sealed
@@ -45,7 +44,7 @@ class HttpxTransport:
 
 ## Bind flow: state is single-use, expiring, principal-bound
 
-The Rev 3 E12 law (plan 52 §10): a bind flow's `state` is **bound to the
+The Rev 3 E12 law: a bind flow's `state` is **bound to the
 authenticated principal** — the anti-bind-CSRF measure. "One in-flight
 flow per account" alone is not sufficient; an attacker's callback must
 not complete against a victim's binding.
@@ -76,7 +75,7 @@ destroyed on the first consume, successful or not.
 `build_authorize_url` emits `response_type=code`, PKCE `S256`, and the
 **verbatim** scope list from the provider catalog row — never
 paraphrased. `prompt="consent"` forces the consent screen (scope growth
-**re-consents**, ADR-0042 clause 4); `access_type="offline"` is how a
+**re-consents**); `access_type="offline"` is how a
 Google server-side flow obtains a refresh token at all. `extra_params`
 is provider-quirk **data** (the row's `extraAuthParams`) and wins over
 the conveniences when they collide.
@@ -87,7 +86,7 @@ the conveniences when they collide.
 
 - **Never serves a known-expired token.** `access()` refreshes first
   when the stored token is expired or inside its skew window (default
-  60 s — ADR-0052 §3: "never sends a token known to be expired").
+  60 s: "never sends a token known to be expired").
 - **Single-flight.** Concurrent refreshes of one binding await one
   attempt: the loser re-reads the vault (the leader persisted before
   unlocking) or adopts the leader's typed failure within
@@ -98,12 +97,12 @@ the conveniences when they collide.
   (`unreachable`, `rate-limited`): full-jitter exponential backoff
   (`base_delay * 2^n`, capped at `max_delay`), `Retry-After` honored
   when capped. `max_attempts` (default 3) then raises the last typed
-  error — no infinite retry, ever (ADR-0042 §6).
+  error — no infinite retry, ever.
 - **Rotation-crash safety.** The fresh grant is persisted through
   `TokenVault.rotate` — **one atomic sealed write** — so the old record
-  survives untouched until the new grant is durable (ADR-0042 clause
-  6). A failing write raises typed `not-ready` and leaves the old grant
-  sealed; after the flight window the host retry path can re-attempt,
+  survives untouched until the new grant is durable. A failing write
+  raises typed `not-ready` and leaves the old grant sealed; after the
+  flight window the host retry path can re-attempt,
   and a provider that already invalidated the old token answers
   `invalid_grant` → `needs-auth` → re-bind (the documented broken-chain
   posture). When a provider omits a `refresh_token` (not rotated), the
@@ -116,12 +115,12 @@ to `needs-secret` (fresh consent screen, never a silent retry).
 ## Custody: the sealed-slot law
 
 Tokens live **only** inside `SecretCipher.encrypt_value(...,
-context="oauth:<binding-id>")` envelopes (ADR-0052 §2: no token-shaped
+context="oauth:<binding-id>")` envelopes (no token-shaped
 column anywhere). The per-binding context is the at-rest cut-and-paste
 defense: a ciphertext copied to another binding fails decryption with a
 typed `needs-secret` — fail closed, re-bind. `TokenVault(store,
 cipher=None)` refuses every operation (`needs-secret`): **no keyring ⇒
-no custody ⇒ no binding**, no plaintext fallback (ADR-0042 clause 3).
+no custody ⇒ no binding**, no plaintext fallback.
 
 The no-leak law is enforced in code, not by review discipline:
 
@@ -129,16 +128,16 @@ The no-leak law is enforced in code, not by review discipline:
   (presence + length only — `access_token=<str len=112>`);
 - every `OAuthError.detail` is scrubbed at construction: values the
   call site put on the wire are replaced with `<redacted>`, URL query
-  strings are stripped (plan 52 §10 E12), length is capped at 500;
+  strings are stripped, length is capped at 500;
 - token responses are normalized into `TokenSet` — the raw body text is
   never carried, unknown provider fields are dropped (`id_token`
   refused; only a small `provider_extra` allowlist round-trips);
 - the kit ships the assertion: `nx_auth.testing.assert_no_token_leak`
   scans `str()`/`repr()` of anything you hand it. Hosts re-run it
   against their own surfaces (config rows, logs, audit, notifications —
-  ADR-0042 clause 3's never-in-any-form list).
+  the never-in-any-form list).
 
-Unbind (ADR-0052 §3): revoke at the provider best-effort (a host
+Unbind: revoke at the provider best-effort (a host
 transport call), `vault.clear(binding_id)`, delete the binding row.
 
 ## Typed errors

@@ -33,7 +33,7 @@ produces the standard claim set:
 Products may add claims through `extra` (health: `tenant_id`, `scope`)
 — `extra` can never override a standard claim (`TokenError`).
 
-`pat` (health's scoped personal access token, ADR 0054 Phase 6) is a
+`pat` (health's scoped personal access token) is a
 declared member with **no JWT semantics**: the product resolves it by an
 indexed lookup prefix plus a constant-time sha256 compare, and it can
 never be minted or verified through `mint_token`/`verify_token` (both
