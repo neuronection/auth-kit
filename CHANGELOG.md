@@ -5,6 +5,26 @@ All notable changes to **neuronection-auth-kit** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.1] - 2026-11-13
+
+### Fixed
+
+- **Probe refs no longer collide with real slots.** `nx_auth.secrets` used
+  the fixed keyring/file ref `__backend_probe__`; a host that stored a
+  real value under that name could have it overwritten and deleted by the
+  write round-trip. Each probe now uses a per-process random
+  `__backend_probe__<pid>_<hex>` ref (and a random payload), deleted in
+  `finally`; the fixed name is never touched. Health seed slots are
+  host-defined, so this was a real collision surface.
+- **Sealed-file writes are exclusive and atomic with mode set at
+  creation.** `_FileStore._save` now uses `tempfile.mkstemp` (0600,
+  `O_EXCL`, no symlink following) in the store directory, writes and
+  fsyncs the fd, then `os.replace`s; the predictable `<store>.tmp` name
+  and chmod-after-write window are gone. Concurrent writers no longer
+  clobber each other's temp file.
+- **`uv.lock` refreshed** to the 0.6.1 package metadata/dev extras (the
+  documented residual from 0.6.0; CI still resolves from `pyproject.toml`).
+
 ## [0.6.0] - 2026-11-12
 
 ### Added

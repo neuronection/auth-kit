@@ -46,7 +46,10 @@ selected keyring  →  sealed file (store_path)  →  <env_prefix>_<SLOT>
   back, delete). `keyring.backends.null` accepts writes and silently
   discards them; a read-only backend and a locked Secret Service fail the
   same way. A backend that does not round-trip is never selected —
-  silently losing a credential is worse than refusing to store it.
+  silently losing a credential is worse than refusing to store it. Each
+  probe uses a random per-process ref (`__backend_probe__<pid>_<hex>`),
+  never a fixed slot name, so a host value called `__backend_probe__` is
+  not touched.
 - Selection is memoized per process, per `(service, store_path)`, and
   cleared by `reset_caches()`.
 - The **environment is read-only** and is never reported by
@@ -70,11 +73,13 @@ source. Entry names are slots; values are `enc::` envelopes.
 
 **Sealed file** — `store_path`, a flat JSON map
 `{"<slot>": "enc::<fernet-token>"}` (exactly study's `secrets.json`
-shape, so a pre-adoption file resolves unchanged). Writes are atomic
-(tmp + `os.replace`) and serialized under a lock; the mode is `0600` on
-every write, and a pre-existing group/world-readable file is repaired on
-read. The first resolution creates an empty file when this backend is
-selected. One writer per file is assumed.
+shape, so a pre-adoption file resolves unchanged). Writes use an
+exclusive `mkstemp` temp file (created `0600`, no symlink following) in
+the store directory, fsync the fd, then `os.replace` — atomic, no
+predictable `<store>.tmp`, and serialized under a lock. The mode is
+`0600` on every write, and a pre-existing group/world-readable file is
+repaired on read. The first resolution creates an empty file when this
+backend is selected. One writer per file is assumed.
 
 **Environment** — `<env_prefix>_<SLOT>`, the slot folded with every
 non-alphanumeric run → `_`, uppercased, byte-identical to health's

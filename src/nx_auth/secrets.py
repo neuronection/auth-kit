@@ -68,6 +68,7 @@ import logging
 import os
 import re
 import stat
+import tempfile
 import threading
 from collections.abc import Sequence
 from pathlib import Path
@@ -102,9 +103,10 @@ __all__ = [
 
 _NO_BACKEND = "none"
 _FILE_MODE = 0o600
-# Same ref study's pre-adoption backend used, so an existing store gains no
-# second transient entry name (the value is a pid, the ref is inert).
-_PROBE_REF = "__backend_probe__"
+# The probe ref is unique per process/probe: a fixed name could collide
+# with a real slot (health seed slots are host-defined) and be overwritten
+# or deleted by the write round-trip. The prefix keeps it diagnosable.
+_PROBE_REF_PREFIX = "__backend_probe__"
 _ENV_NON_ALNUM = re.compile(r"[^A-Za-z0-9]+")
 
 _STORE_LOCK = threading.Lock()
@@ -274,14 +276,28 @@ class _FileStore:
 
     def _save(self, data: dict[str, str]) -> None:
         self._path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = self._path.with_name(f"{self._path.name}.tmp")
+        fd = -1
+        tmp: str | None = None
         try:
-            tmp.write_text(json.dumps(data, separators=(",", ":")), encoding="utf-8")
+            fd, tmp = tempfile.mkstemp(
+                prefix=f".{self._path.name}.",
+                suffix=".tmp",
+                dir=self._path.parent,
+            )
             os.chmod(tmp, _FILE_MODE)
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                fd = -1
+                handle.write(json.dumps(data, separators=(",", ":")))
+                handle.flush()
+                os.fsync(handle.fileno())
             os.replace(tmp, self._path)
         except OSError:
-            with contextlib.suppress(OSError):
-                tmp.unlink()
+            if fd >= 0:
+                with contextlib.suppress(OSError):
+                    os.close(fd)
+            if tmp is not None:
+                with contextlib.suppress(OSError):
+                    os.unlink(tmp)
             raise
 
     def get(self, ref: str) -> str | None:
@@ -332,6 +348,11 @@ _NO_STORE = _NoStore()
 # ---------------------------------------------------------------------------
 
 
+def _new_probe_ref() -> str:
+    """A per-probe ref; a fixed name could collide with a real host slot."""
+    return f"{_PROBE_REF_PREFIX}_{os.getpid()}_{os.urandom(8).hex()}"
+
+
 def _roundtrip(store: _Store, payload: str) -> bool:
     """True only if a write is actually readable back.
 
@@ -339,9 +360,10 @@ def _roundtrip(store: _Store, payload: str) -> bool:
     a read-only backend refuses, a locked Secret Service raises — all three
     must end in "not selected".
     """
+    probe_ref = _new_probe_ref()
     try:
-        store.set(_PROBE_REF, payload)
-        back = store.get(_PROBE_REF)
+        store.set(probe_ref, payload)
+        back = store.get(probe_ref)
     except Exception as exc:
         logger.debug(
             "secret backend %r failed its write probe (%s)", store.name, type(exc).__name__
@@ -349,12 +371,12 @@ def _roundtrip(store: _Store, payload: str) -> bool:
         return False
     finally:
         with contextlib.suppress(Exception):
-            store.delete(_PROBE_REF)
+            store.delete(probe_ref)
     return back == payload
 
 
 def _build_store(service: str, store_path: Path | None) -> _Store:
-    probe = f"probe-{os.getpid()}"
+    probe = f"probe-{os.getpid()}-{os.urandom(8).hex()}"
     module = _keyring_module()
     if module is not None:
         candidate = _KeyringStore(module, service, _missing_delete_error())
@@ -425,7 +447,7 @@ def probe(
             f"no writable secret backend for service {service!r}: the OS "
             "keyring is unavailable and no sealed-file path is configured"
         )
-    payload = _seal(f"probe-{os.getpid()}", sealer)
+    payload = _seal(f"probe-{os.getpid()}-{os.urandom(8).hex()}", sealer)
     if not _roundtrip(store, payload):
         raise SecretStoreUnavailable(
             f"the {store.name} secret backend for service {service!r} did not "

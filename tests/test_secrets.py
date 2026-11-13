@@ -24,6 +24,7 @@ import ast
 import asyncio
 import base64
 import json
+import os
 import re
 import stat
 import sys
@@ -656,6 +657,52 @@ def test_set_write_failure_raises_without_switching_backend(
 def test_delete_without_a_backend_raises() -> None:
     with pytest.raises(secrets.SecretStoreUnavailable):
         secrets.delete("demo", service=STUDY_SERVICE)
+
+
+def test_probe_ref_is_unique_and_never_the_fixed_legacy_name() -> None:
+    refs = {secrets._new_probe_ref() for _ in range(20)}
+    assert len(refs) == 20
+    assert all(ref.startswith("__backend_probe__") for ref in refs)
+    assert "__backend_probe__" not in refs
+
+
+def test_probe_does_not_touch_a_real_slot_named_like_the_probe(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    keyring = _MemKeyring()
+    keyring.install(monkeypatch)
+    keyring.data[(STUDY_SERVICE, "__backend_probe__")] = "keep-me"
+    assert secrets.backend_name(service=STUDY_SERVICE) == "keyring"
+    assert keyring.data[(STUDY_SERVICE, "__backend_probe__")] == "keep-me"
+
+    store_path = _file_with(tmp_path / "secrets.json", {"__backend_probe__": "keep-me"})
+    monkeypatch.setitem(sys.modules, "keyring", None)
+    secrets.reset_caches()
+    assert secrets.backend_name(service=STUDY_SERVICE, store_path=store_path) == "file"
+    assert json.loads(store_path.read_text(encoding="utf-8"))["__backend_probe__"] == "keep-me"
+
+
+def test_file_save_uses_an_exclusive_unique_temp(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    store_path = tmp_path / "secrets.json"
+    seen: list[tuple[str, int]] = []
+    real_replace = os.replace
+
+    def replace(src: str, dst: str) -> None:
+        src_path = Path(src)
+        seen.append((src_path.name, stat.S_IMODE(src_path.stat().st_mode)))
+        real_replace(src, dst)
+
+    monkeypatch.setattr(os, "replace", replace)
+    secrets.set("demo", SECRET, service=STUDY_SERVICE, store_path=store_path, sealer=_sealer())
+
+    assert seen
+    name, mode = seen[-1]
+    assert name != "secrets.json.tmp"
+    assert name.startswith(".secrets.json.")
+    assert mode == 0o600
+    assert not (tmp_path / "secrets.json.tmp").exists()
 
 
 def test_probe_reports_the_writable_backend(monkeypatch: pytest.MonkeyPatch) -> None:

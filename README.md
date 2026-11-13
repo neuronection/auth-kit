@@ -16,7 +16,7 @@ env), the `nx_auth.opaque` **opaque credential core** (branded/prefix or
 bare tokens, SHA-256 at rest, constant-time compare), and the shared
 security test kit.
 
-[![Status](https://img.shields.io/badge/status-0.6.0-blue.svg)](CHANGELOG.md)
+[![Status](https://img.shields.io/badge/status-0.6.1-blue.svg)](CHANGELOG.md)
 [![License](https://img.shields.io/badge/license-Apache%202.0-green.svg)](LICENSE)
 
 ## Install
