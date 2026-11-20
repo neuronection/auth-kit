@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Literal
 
 from nx_auth.instance import IdentityMode, parse_identity_mode
-import re
 
 logger = logging.getLogger(__name__)
 

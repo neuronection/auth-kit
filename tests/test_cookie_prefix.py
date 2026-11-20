@@ -140,7 +140,12 @@ class TestLegacyClearingMiddleware:
         client = self._app()
         r = client.get("/x", cookies={"nx_refresh": "r"})
         raw = [str(v) for v in r.headers.get_list("set-cookie") if str(v).startswith("nx_refresh=")]
-        paths = {seg.split("=", 1)[1] for v in raw for seg in v.split("; ") if seg.startswith("Path=")}
+        paths = {
+            seg.split("=", 1)[1]
+            for v in raw
+            for seg in v.split("; ")
+            if seg.startswith("Path=")
+        }
         assert paths == {"/", "/api/v1/auth"}
 
     def test_host_prefixed_access_expired(self) -> None:
