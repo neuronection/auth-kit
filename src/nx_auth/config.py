@@ -105,7 +105,7 @@ AUTH_KNOB_ENV_NAMES: tuple[str, ...] = tuple(spec[0] for spec in _KNOB_SPECS)
 NON_KNOB_FIELDS: dict[str, str] = {
     "iss": "code constant — the product slug is passed by the product, never read from env",
     "demo_user_id": "contract-fixed UUID (§13) — the demo principal id is not operator-tunable",
-    "cookie_prefix": "code constant — the per-app prefix (co-location cookie isolation) is passed by the product, never env-routed",
+    "cookie_prefix": "code constant — the per-app prefix (co-location cookie isolation); never env",
     "auth_exempt_prefixes": "structural route list, set in code per product (not a tunable)",
     "extra": "structural escape hatch for product-specific keys, not a knob",
 }

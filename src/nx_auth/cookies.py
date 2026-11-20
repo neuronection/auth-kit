@@ -192,7 +192,8 @@ class CsrfMiddleware:
         *,
         cookie_name: str,
         exempt_prefixes: tuple[str, ...] = DEFAULT_CSRF_EXEMPT_PREFIXES,
-        session_cookie_names: tuple[str, ...] = LEGACY_COOKIE_NAMES + (
+        session_cookie_names: tuple[str, ...] = (
+            *LEGACY_COOKIE_NAMES,
             LEGACY_HOST_PREFIXED_ACCESS,
         ),
     ) -> None:
