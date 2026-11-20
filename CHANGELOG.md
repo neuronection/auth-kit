@@ -5,6 +5,34 @@ All notable changes to **neuronection-auth-kit** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2026-11-20
+
+### Added
+
+- **Per-app cookie prefixes (co-location isolation).** `AuthConfig.cookie_prefix`
+  (default `nx_`, e.g. `ha_`/`sa_`/`career_`) names cookies
+  `<prefix>access`/`<prefix>refresh`/`<prefix>csrf` (`__Host-<prefix>access`
+  under TLS). Cookies are scoped by hostname — ports are ignored — so
+  same-hostname co-located apps sharing the historical `nx_*` names
+  shadow each other's sessions and CSRF jars. The prefix is a code
+  constant passed by the product (`NON_KNOB_FIELDS`), never env-routed.
+  `CsrfMiddleware` gains `session_cookie_names` (the current names,
+  passed by `install()`); stale pre-prefix `nx_access` no longer arms the
+  CSRF gate.
+- **`LegacyCookieClearingMiddleware` (stale-jar retirement).** `install()` mounts
+  it automatically for non-default prefixes: pre-0.7 `nx_*` cookies are
+  expired on sight (both Paths for `nx_refresh`, both access variants),
+  so renamed deployments are not shadowed for the refresh absolute TTL.
+- `testing.csrf_headers(client, config=None)` reads the app's prefixed
+  CSRF name; without a config it assumes the family default (the kit's
+  own test app).
+
+### Compatibility
+
+- Existing sessions invalidate exactly once when a product adopts a
+  prefix — the legacy names are cleared server-side on the first
+  response; users simply log in again.
+
 ## [0.6.1] - 2026-11-13
 
 ### Fixed

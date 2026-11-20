@@ -15,11 +15,83 @@ class CookieNames:
     csrf: str
 
 
+#: The unprefixed family names (pre-0.7.0). After a product adopts a
+#: per-app `cookie_prefix` (co-location isolation), browsers still hold these for
+#: up to the refresh absolute TTL; `LegacyCookieClearingMiddleware`
+#: expires them on sight so they cannot shadow or be replayed.
+LEGACY_COOKIE_NAMES: tuple[str, ...] = ("nx_access", "nx_refresh", "nx_csrf")
+LEGACY_HOST_PREFIXED_ACCESS = "__Host-nx_access"
+
+
 def cookie_names(config: AuthConfig) -> CookieNames:
-    """`__Host-nx_access` under TLS (contract §9); `nx_refresh` cannot
-    use the prefix (its Path is narrower than `/`), matching the table."""
-    access = "__Host-nx_access" if config.cookie_secure else "nx_access"
-    return CookieNames(access=access, refresh="nx_refresh", csrf="nx_csrf")
+    """Per-app prefixed cookie names (co-location isolation).
+
+    `<prefix>access` (``__Host-<prefix>access`` under TLS — contract §9);
+    `<prefix>refresh` cannot take the ``__Host-`` prefix (its Path is
+    narrower than `/`), matching the table. The family default prefix
+    ``nx_`` reproduces the historical names exactly.
+    """
+    prefix = config.cookie_prefix
+    access = f"__Host-{prefix}access" if config.cookie_secure else f"{prefix}access"
+    return CookieNames(access=access, refresh=f"{prefix}refresh", csrf=f"{prefix}csrf")
+
+
+def session_cookie_names(config: AuthConfig) -> tuple[str, ...]:
+    """Every name a *current* session may ride, both TLS variants."""
+    names = cookie_names(config)
+    return (
+        names.access,
+        f"{config.cookie_prefix}access",
+        names.refresh,
+    )
+
+
+class LegacyCookieClearingMiddleware:
+    """Expire pre-prefix `nx_*` cookies once, on sight (stale-jar retirement).
+
+    Mounted automatically by `install()` when the config uses a
+    non-default prefix. If the request carries any legacy name, the
+    response gets matching expired `Set-Cookie` headers — both the plain
+    and the `__Host-` access variant, and `nx_refresh` at both its
+    historical Paths — so the jar cleans up on the first response after
+    the upgrade instead of shadowing requests for up to ~30 days.
+    Read-only otherwise: no request cookies, no headers added.
+    """
+
+    def __init__(self, app: Any) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        headers = {
+            key.decode("latin-1").lower(): value.decode("latin-1")
+            for key, value in scope.get("headers", [])
+        }
+        present = [n for n in (*LEGACY_COOKIE_NAMES, LEGACY_HOST_PREFIXED_ACCESS)
+                   if n in parse_cookies(headers.get("cookie"))]
+        if not present:
+            await self.app(scope, receive, send)
+            return
+
+        async def send_with_clearing(message: Any) -> None:
+            if message["type"] == "http.response.start":
+                extra: list[tuple[bytes, bytes]] = []
+                for name in present:
+                    for path in ("/", COOKIE_PATH_AUTH if name == "nx_refresh" else "/"):
+                        extra.append(
+                            (
+                                b"set-cookie",
+                                f"{name}=; Max-Age=0; Path={path}; SameSite=Lax".encode(
+                                    "ascii"
+                                ),
+                            )
+                        )
+                message["headers"] = [*message.get("headers", []), *extra]
+            await send(message)
+
+        await self.app(scope, receive, send_with_clearing)
 
 
 def new_csrf_token() -> str:
@@ -120,10 +192,14 @@ class CsrfMiddleware:
         *,
         cookie_name: str,
         exempt_prefixes: tuple[str, ...] = DEFAULT_CSRF_EXEMPT_PREFIXES,
+        session_cookie_names: tuple[str, ...] = LEGACY_COOKIE_NAMES + (
+            LEGACY_HOST_PREFIXED_ACCESS,
+        ),
     ) -> None:
         self.app = app
         self.cookie_name = cookie_name
         self.exempt_prefixes = exempt_prefixes
+        self.session_cookie_names = session_cookie_names
 
     async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
         if scope["type"] != "http" or scope["method"] in SAFE_METHODS:
@@ -142,9 +218,7 @@ class CsrfMiddleware:
         }
         cookies = parse_cookies(headers.get("cookie"))
         csrf_cookie = cookies.get(self.cookie_name, "")
-        session_present = any(
-            name in cookies for name in ("nx_access", "__Host-nx_access", "nx_refresh")
-        )
+        session_present = any(name in cookies for name in self.session_cookie_names)
         if not csrf_cookie and not session_present:
             await self.app(scope, receive, send)
             return

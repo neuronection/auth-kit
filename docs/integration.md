@@ -210,3 +210,16 @@ Upgrading checklist for a product: bump the dependency → run the
 contract drift gate (`pytest -m contract`) → re-run the product suite →
 check `CHANGELOG.md` for rows above. Destructive schema changes are
 sanctioned pre-release (dev DBs recreate).
+
+## Cookie prefixes (0.7.0)
+
+Pass the per-app prefix when building the config — a code constant, not
+env:
+
+```python
+config = AuthConfig.from_env("SA", iss="study", cookie_prefix="sa_")
+```
+
+`install()` handles the rest: CSRF middleware learns the prefixed
+names, and legacy `nx_*` cookies are expired automatically on the first
+response after the upgrade. Expect exactly one re-login per app.

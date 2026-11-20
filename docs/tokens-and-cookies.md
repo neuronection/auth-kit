@@ -83,6 +83,19 @@ family app's cookie on the same host would otherwise trip the CSRF
 gate. The `__Host-nx_access` clear must carry `Secure` and only run in
 a secure context: the `__Host-` prefix rules reject any other write.
 
+### Per-app prefixes (0.7.0, co-location cookie isolation)
+
+Cookies are scoped by **hostname — ports are ignored** — so family apps
+co-located on one host (`http://box:8090`, `:8091`, `:8092`) would share
+one jar if they shared names. `AuthConfig.cookie_prefix` (default `nx_`)
+gives each product distinct names (`ha_access`, `sa_csrf`, …); the
+`__Host-` variant derives as `__Host-<prefix>access`. The prefix is a
+product code constant (`NON_KNOB_FIELDS`), never env-routed. Products
+adopting a prefix get `LegacyCookieClearingMiddleware` mounted
+automatically: pre-0.7 `nx_*` cookies are expired on sight (both Paths
+for `nx_refresh`), so sessions invalidate exactly once instead of being
+shadowed for the refresh absolute TTL.
+
 ## Double-submit CSRF
 
 - The `nx_csrf` token is readable by JavaScript and issued beside every

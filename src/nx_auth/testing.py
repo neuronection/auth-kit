@@ -18,6 +18,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from nx_auth.config import AuthConfig
+from nx_auth.cookies import cookie_names
 from nx_auth.install import install
 from nx_auth.instance import InstanceMode
 from nx_auth.keys import KeyRing
@@ -157,10 +158,16 @@ def assert_cookie_flags(
             )
 
 
-def csrf_headers(client: Any) -> dict[str, str]:
-    value = client.cookies.get("nx_csrf")
+def csrf_headers(client: Any, config: AuthConfig | None = None) -> dict[str, str]:
+    """The double-submit echo for the app under test.
+
+    `config` names the app's cookie (per-app prefix, co-location cookie isolation); without
+    one, the family default `nx_csrf` is assumed (the kit's own test app).
+    """
+    name = cookie_names(config).csrf if config is not None else "nx_csrf"
+    value = client.cookies.get(name)
     if not value:
-        raise AssertionError("no nx_csrf cookie on the client — log in first")
+        raise AssertionError(f"no {name} cookie on the client — log in first")
     return {"X-CSRF-Token": value}
 
 
