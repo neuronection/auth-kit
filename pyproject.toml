@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "neuronection-auth-kit"
-version = "0.6.1"
+version = "0.7.0"
 description = "Family identity & authentication library: tokens, passwords, sessions, cookies/CSRF, instance access modes"
 readme = "README.md"
 license = "Apache-2.0"
@@ -58,16 +58,26 @@ packages = ["src/nx_auth"]
 line-length = 100
 target-version = "py312"
 # Vendored family contract modules must stay BYTE-identical to their dev
-# canonicals (ADR-0031/0035/0040) — excluded from the formatter too, since
-# `ruff format` does not honor the lint per-file-ignores below and would
-# reflow them (plan 81 C review, 2026-10-21).
+# canonicals (ADR-0031/0035/0040) — excluded from lint and format; findings
+# belong to the canonical, not the vendored copy (same accommodation for the
+# cloud, retrieval, vector/tokenizer and model-pricing contracts).
 extend-exclude = [
     "app/extensions/contract.py",
     "app/extensions/polite_http.py",
     "app/extensions/conformance.py",
+    "app/extensions/extension_sources.py",
     "app/extensions/search/providers_contract.py",
     "app/extensions/isolation.py",
     "app/ai/flow_events.py",
+    "app/extensions/cloud/cloud_calendar.py",
+    "app/extensions/cloud/cloud_files.py",
+    "app/extensions/cloud/cloud_providers.py",
+    "app/storage/retrieval_ops.py",
+    "app/storage/vector_contract.py",
+    "app/storage/tokenizer_contract.py",
+    "app/ai/model_pricing.py",
+    "app/ai/model_pricing_data.py",
+    "tests/cloud_conformance.py",
 ]
 
 [tool.ruff.lint]

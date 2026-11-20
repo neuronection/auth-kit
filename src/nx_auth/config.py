@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Literal
@@ -65,6 +66,11 @@ def _parse_identity(raw: object) -> str | None:
     return parse_identity_mode(text).value
 
 
+#: Cookie prefix shape (co-location isolation): `ha_`, `sa_`, `career_`, `nx_` —
+#: lowercase start, lowercase/digits, one trailing underscore.
+_COOKIE_PREFIX_RE = re.compile(r"^[a-z][a-z0-9]*_$")
+
+
 # §16 knob map (ADR-0028 §3): every env-tunable of `AuthConfig` with its
 # canonical `<PREFIX>_<SUFFIX>` env name and parser. `from_env` and
 # `knob_overrides` both read through this table, so the OS-environment
@@ -99,6 +105,7 @@ AUTH_KNOB_ENV_NAMES: tuple[str, ...] = tuple(spec[0] for spec in _KNOB_SPECS)
 NON_KNOB_FIELDS: dict[str, str] = {
     "iss": "code constant — the product slug is passed by the product, never read from env",
     "demo_user_id": "contract-fixed UUID (§13) — the demo principal id is not operator-tunable",
+    "cookie_prefix": "code constant — the per-app prefix (co-location cookie isolation); never env",
     "auth_exempt_prefixes": "structural route list, set in code per product (not a tunable)",
     "extra": "structural escape hatch for product-specific keys, not a knob",
 }
@@ -162,6 +169,7 @@ class AuthConfig:
     password_min_length: int = DEFAULT_PASSWORD_MIN_LENGTH
     registration_enabled: bool = True
     cookie_secure: bool = False
+    cookie_prefix: str = "nx_"
     trusted_proxy_count: int = 0
     require_shell_secret: bool = False
     demo_user_id: str = "00000000-0000-4000-8000-00000000d0e0"
@@ -185,6 +193,16 @@ class AuthConfig:
         )
         if not self.iss:
             raise ValueError("iss (product slug) is required")
+        # Cookie prefix (co-location isolation): per-app names (`ha_access`, `sa_csrf`,
+        # …) so same-hostname co-location cannot shadow cookies (cookies
+        # are scoped by hostname — ports are ignored). Lowercase letter
+        # first, lowercase/digits, single trailing underscore; the
+        # `__Host-` variant is derived, never stored here.
+        if not _COOKIE_PREFIX_RE.fullmatch(self.cookie_prefix):
+            raise ValueError(
+                "cookie_prefix must match ^[a-z][a-z0-9]*_$ "
+                f"(got {self.cookie_prefix!r})"
+            )
         if not 1 <= self.access_ttl_minutes <= MAX_ACCESS_TTL_MINUTES:
             raise ValueError(
                 f"access_ttl_minutes must be 1..{MAX_ACCESS_TTL_MINUTES} (24h hard cap)"

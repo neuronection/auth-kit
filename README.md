@@ -86,7 +86,7 @@ boot guards, the §16 knob map, password-confirming actions). The kit's
 own suite proves every kit-reachable case; consumers re-run the
 product-level ones (profile binding, WS origin) in their repos.
 
-## Provider-delegation OAuth (opt-in, plan 52 §13)
+## Provider-delegation OAuth (opt-in)
 
 ```python
 from nx_auth.oauth import OAuthClient, TokenClient, TokenVault, authorize, InMemoryStateStore
@@ -116,7 +116,7 @@ custody over `nx_auth.atrest`. No network of its own — inject a
 `TokenTransport` (hosts wrap httpx). Public clients need no secret;
 confidential ones MAY pass one. See [docs/oauth.md](docs/oauth.md).
 
-## Secret store + resolver (opt-in, plan 60 D2)
+## Secret store + resolver (opt-in)
 
 ```python
 from nx_auth import secrets
@@ -145,7 +145,7 @@ always injected — the kit never loads a key ring, writes
 `auth_keys.json` or touches a signing key. See
 [docs/secrets.md](docs/secrets.md).
 
-## Opaque credentials (opt-in, plan 60 D3)
+## Opaque credentials (opt-in)
 
 ```python
 from nx_auth.opaque import mint, parse, verify
@@ -206,12 +206,12 @@ disagreement):
 | §5 normative rows (users/sessions) | `protocols.py`, `sqlalchemy_stores.py` | [identity-model.md](docs/identity-model.md) |
 | §6 profiles | `ProfileStore`, `kit.ensure_profile` | [identity-model.md](docs/identity-model.md) |
 | §7 passwords/lockout/rate limits | `passwords.py`, `lockout.py`, `ratelimit.py` | [security.md](docs/security.md) |
-| §7 rate limits + response headers (plan 21) | `ratelimit.py` (Counter/`RateLimitPolicy`/middleware), `headers.py` | [security.md](docs/security.md) |
+| §7 rate limits + response headers | `ratelimit.py` (Counter/`RateLimitPolicy`/middleware), `headers.py` | [security.md](docs/security.md) |
 | §8 token claims & lifetimes | `tokens.py`, `keys.py` | [tokens-and-cookies.md](docs/tokens-and-cookies.md) |
 | §8 at-rest (`DATA_KEY` family) | `atrest.py` | [atrest.md](docs/atrest.md) |
-| §8 opaque credentials — PAT/feed/capture, hash at rest (plan 60 D3) | `opaque.py` | [opaque-credentials.md](docs/opaque-credentials.md) |
-| §8/§17 secret slots — store + resolver (plan 60 D2) | `secrets.py` | [secrets.md](docs/secrets.md) |
-| §3/§12 provider-delegation OAuth (ADR-0052, plan 52) | `oauth.py` | [oauth.md](docs/oauth.md) |
+| §8 opaque credentials — PAT/feed/capture, hash at rest | `opaque.py` | [opaque-credentials.md](docs/opaque-credentials.md) |
+| §8/§17 secret slots — store + resolver | `secrets.py` | [secrets.md](docs/secrets.md) |
+| §3/§12 provider-delegation OAuth | `oauth.py` | [oauth.md](docs/oauth.md) |
 | §9 user-client (Bearer) class | `deps.py`, `enforcement.py` | [enforcement.md](docs/enforcement.md) |
 | §10 cookies, CSRF, WS | `cookies.py`, `enforcement.py` | [tokens-and-cookies.md](docs/tokens-and-cookies.md), [enforcement.md](docs/enforcement.md) |
 | §11 shell gate | `shell.py`, `dim.py` | [desktop-mode.md](docs/desktop-mode.md) |

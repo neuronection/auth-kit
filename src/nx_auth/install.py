@@ -7,7 +7,12 @@ from fastapi import FastAPI
 
 from nx_auth.audit import AuditEvent, AuditSink, NullAuditSink
 from nx_auth.config import AuthConfig
-from nx_auth.cookies import DEFAULT_CSRF_EXEMPT_PREFIXES, CsrfMiddleware, cookie_names
+from nx_auth.cookies import (
+    DEFAULT_CSRF_EXEMPT_PREFIXES,
+    CsrfMiddleware,
+    cookie_names,
+    session_cookie_names,
+)
 from nx_auth.instance import InstanceState, read_state
 from nx_auth.keys import KeyRing
 from nx_auth.protocols import EmailAlreadyExists, ProfileStore, UserRecord
@@ -125,7 +130,14 @@ def install(
         CsrfMiddleware,
         cookie_name=cookie_names(config).csrf,
         exempt_prefixes=DEFAULT_CSRF_EXEMPT_PREFIXES,
+        session_cookie_names=session_cookie_names(config),
     )
+    if config.cookie_prefix != "nx_":
+        # Plan 70 D4/H2: expire pre-prefix nx_* cookies on sight so a
+        # renamed deployment cannot be shadowed by stale jar entries.
+        from nx_auth.cookies import LegacyCookieClearingMiddleware
+
+        app.add_middleware(LegacyCookieClearingMiddleware)
     from nx_auth.enforcement import SessionAuthMiddleware
 
     app.add_middleware(

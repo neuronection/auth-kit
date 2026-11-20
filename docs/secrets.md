@@ -1,7 +1,7 @@
 # Secret store + resolver (`nx_auth.secrets`)
 
 One façade for "where does this named secret live?" — the store study
-owns and the resolver health asks (plan 60 D2). A product names a
+owns and the resolver health asks. A product names a
 *slot* and a keyring *service*; the kit picks the best backend that
 actually works, seals what it stores and never invents a value.
 

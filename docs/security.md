@@ -43,7 +43,7 @@ spoof their IP and evade the limits.
 the effective budget multiplies per replica — a shared limit store is a
 tracked gap (S-P5) before scaling out.
 
-## Rate limits — the general family limiter (plan 21)
+## Rate limits — the general family limiter
 
 `nx_auth.ratelimit` also provides the **general-purpose limiter** every
 product mounts for its HTTP surface (opt-in — never wired into
@@ -68,7 +68,7 @@ product mounts for its HTTP surface (opt-in — never wired into
 - **Ceilings** resolve **per request** through the policy's `ceiling`
   callable — products back it with their `Settings` so the §16 knobs
   (`<P>_RATELIMIT_{ENABLED,AUTH,AUTH_EMAIL,AI,MCP,DEFAULT}`) route from
-  `.env` and OS env identically (plan 20's knob machinery). `0`
+  `.env` and OS env identically (the family knob machinery). `0`
   disables a bucket; `None` ⇒ route default.
 - **Client identity**: `client_ip` (rightmost `trusted_proxy_count`
   hops of `X-Forwarded-For`) — see above.
@@ -76,7 +76,7 @@ product mounts for its HTTP surface (opt-in — never wired into
 Contract cases 19 + 22 in `testing.CONTRACT_CASES` pin this surface;
 `tests/test_ratelimit_general.py` proves them kit-side.
 
-## Security headers (plan 21)
+## Security headers
 
 `nx_auth.headers.SecurityHeadersMiddleware` + `HeaderPolicy` — one
 middleware, per-product policy (`HeaderPolicy(web_csp=…,
@@ -99,7 +99,7 @@ hsts_behind_proxy=False, extra=…)`):
 - `hsts_behind_proxy=True` emits `Strict-Transport-Security` only when
   the client's connection arrived over https (`X-Forwarded-Proto`'s
   first — client-side — hop, else the ASGI scheme); HSTS otherwise
-  stays at the nginx layer (ADR-0005).
+  stays at the nginx layer.
 
 Contract cases 20 + 21; `tests/test_headers.py` proves them kit-side.
 

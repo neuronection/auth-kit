@@ -80,7 +80,7 @@ src/nx_auth/
 ├── secrets.py          secret store + resolver: probe-or-fail keyring →
 │                       sealed 0600 file → env, sealed-before-storage
 │                       values, injected SecretCipher, redaction
-├── oauth.py            provider-delegation OAuth (plan 52 §13): PKCE S256,
+├── oauth.py            provider-delegation OAuth: PKCE S256,
 │                       principal-bound single-use state, code exchange,
 │                       single-flight refresh + rotation-crash safety,
 │                       sealed token custody over atrest — transport/state/
