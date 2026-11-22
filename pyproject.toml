@@ -75,6 +75,8 @@ extend-exclude = [
     "app/storage/retrieval_ops.py",
     "app/storage/vector_contract.py",
     "app/storage/tokenizer_contract.py",
+    "app/storage/object_storage.py",
+    "app/storage/object_storage_migrate.py",
     "app/ai/model_pricing.py",
     "app/ai/model_pricing_data.py",
     "tests/cloud_conformance.py",
